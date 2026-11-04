@@ -1,6 +1,6 @@
 # Status
 
-Last updated after M7. Next step: M9 (demo app).
+Last updated after M9. Next steps: run the macOS stages on a Mac (M7 verification), IME composition (rest of M8).
 
 | Milestone | State |
 |---|---|
@@ -14,7 +14,7 @@ Last updated after M7. Next step: M9 (demo app).
 | M5b Inline formatting, images, default styles, disabled, focus events, scrollbars | done |
 | M7 Portability gate + macOS | gate done; macOS window written and compile-checked only, **never run** (see platform/darwin/README.md) |
 | M8 Text input | M8a done (editing model, headless); IME composition with the macOS step |
-| M9 Demo app | not started |
+| M9 Demo app | done headless (`examples/demo`); the window is untested |
 
 ## Works
 
@@ -97,6 +97,13 @@ Last updated after M7. Next step: M9 (demo app).
   and shaped text are cached across rebuilds; idle frames copy the
   retained image (about 11 µs at 280x220), a click with re-render about
   1.1 ms. Hit testing follows paint order exactly (shared traversal).
+* Demo app (M9, `examples/demo`): a contacts manager (searchable list
+  with selection and scrolling, edit form with Save/Revert enabled only
+  when dirty, delete confirmation modal with Escape and backdrop click,
+  add with focus on the new name) written against the public API only.
+  A scripted headless session produces 8 states compared byte for byte
+  with goldens in `examples/demo/testdata` (also on linux/386);
+  `go run ./demo -window` opens it on macOS (untested).
 * Interaction (M6): hit testing in exact paint order (z-index, stacking
   contexts, overflow clips; checked pixel-by-pixel against the painted
   output on random documents), `:hover`/`:active`/`:focus` restyling only
@@ -181,7 +188,9 @@ Last updated after M7. Next step: M9 (demo app).
   autoscroll while selecting, `maxlength`/`readonly`/password; the caret
   does not blink (D31).
 * Handlers: `onclick`, `onkeydown`, `onfocus`, `onblur`, `oninput`,
-  `onchange`.
+  `onchange`. Handlers must not call `App` methods that lock (`Focus`,
+  `Value`, `Bounds`, ...): use `Ctx` (`Ctx.Focus` applies after the
+  re-render).
 * Scrolling: overlay scrollbars only (D25), no keyboard scrolling, no
   track clicks, no inertia; no scrolling of `body` itself unless it has
   `overflow: scroll`.

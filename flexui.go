@@ -102,6 +102,12 @@ func (c *Ctx) Attr(name string) string { return c.ev.Current.Attr(name) }
 // elements.
 func (c *Ctx) StopPropagation() { c.stop = true }
 
+// Focus focuses the element with the given id once the view has been
+// re-rendered after the handler (so it can be an element the new view
+// adds). Handlers must use Ctx methods, not App methods that take the
+// app's lock (Focus, Value, Bounds, ...), which would deadlock.
+func (c *Ctx) Focus(id string) { c.app.pendingFocus, c.app.hasPendingFocus = id, true }
+
 // PreventDefault suppresses the default action of the event: for keydown,
 // focus traversal (Tab) and activation (Enter, Space).
 func (c *Ctx) PreventDefault() { c.ev.Prevented = true }
@@ -124,6 +130,9 @@ type App struct {
 	dirty    atomic.Bool
 	missing  map[string]bool
 	warnings []string
+
+	pendingFocus    string
+	hasPendingFocus bool
 }
 
 // New creates an application.
@@ -186,6 +195,10 @@ func (a *App) refresh() {
 			html = a.viewFn()
 		}
 		a.view.SetSource(html, a.css)
+	}
+	if a.hasPendingFocus {
+		a.hasPendingFocus = false
+		a.view.FocusID(a.pendingFocus)
 	}
 }
 

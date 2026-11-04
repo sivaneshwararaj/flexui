@@ -6,6 +6,9 @@ versioning with `v0.x` tags until the API settles.
 ## Unreleased
 
 ### Added
+- M9: `examples/demo`, a contacts manager (list, form, modal) using only
+  the public API, with a scripted headless session and goldens;
+  `Ctx.Focus` (focus after the re-render).
 - M7: portability gate (builds/vets all targets, dependency rules on every
   OS, render hashes on linux/386, `TestHashes` with
   `testdata/render/hashes.txt`); `platform/darwin` (purego) with

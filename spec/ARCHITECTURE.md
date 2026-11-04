@@ -38,7 +38,9 @@ Implementation (`internal/`, free to change):
 | `internal/text` | Bundled Inter faces, shaping (font units), line breaking, `Text` layout (lines, intrinsic widths, ellipsis), glyph rasterizer (`paint.GlyphSource`). | `go-text/typesetting`, `geom`, `style`, `paint` |
 
 `examples/` is a separate module (`replace` to `../`) that uses only the
-public API, proving the library works for an external consumer.
+public API, proving the library works for an external consumer:
+`hello`, `counter` (`-window` on macOS) and `demo` (M9: list, form, modal;
+scripted session in `script.go`, goldens in `demo/testdata`).
 
 Rule: the root package and `internal/...` never import `platform/<os>`
 or OS-specific packages; backends depend on the interfaces, never the

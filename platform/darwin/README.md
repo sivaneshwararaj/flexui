@@ -49,7 +49,10 @@ something fails.
 | 6 | `go run ./platform/darwin/stages/stage6` | Typing into inputs, caret and selection keys (Option = word, Command = line), Cmd+A/C/X/V with the system clipboard, `RESULT: change` when leaving a field. |
 | 7 | `go run ./platform/darwin/stages/stage7` | The public entry point `darwin.Run(app)` with a complete small app. |
 
-Runnable example: `cd examples && go run ./counter -window`.
+Runnable examples: `cd examples && go run ./counter -window`, and the demo
+app (list, form, modal): `cd examples && go run ./demo -window`. The demo's
+headless goldens are in `examples/demo/testdata`; the window should look
+the same at scale 1 (and the same layout, sharper, at 2x).
 
 Also run the determinism gate on the Mac (both should pass unchanged):
 
