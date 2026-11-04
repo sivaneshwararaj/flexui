@@ -53,10 +53,14 @@ type Document struct {
 var known = map[string]bool{
 	"body": true, "div": true, "span": true, "p": true, "h1": true, "h2": true, "h3": true,
 	"button": true, "input": true, "img": true, "ul": true, "li": true, "a": true,
+	"strong": true, "b": true, "em": true, "i": true, "br": true,
 }
 
 // Handler attributes (spec/SUBSET.md §8). Other on* attributes warn.
-var handlerAttrs = map[string]bool{"onclick": true, "onkeydown": true}
+var handlerAttrs = map[string]bool{
+	"onclick": true, "onkeydown": true, "onfocus": true, "onblur": true,
+	"oninput": true, "onchange": true,
+}
 
 // Elements that are never rendered.
 var skipped = map[string]bool{
@@ -113,7 +117,7 @@ func convert(h *html.Node, parent *Node, warns *[]string) *Node {
 	for _, a := range h.Attr {
 		n.Attrs = append(n.Attrs, Attr{a.Key, a.Val})
 		if strings.HasPrefix(a.Key, "on") && !handlerAttrs[a.Key] {
-			*warns = append(*warns, fmt.Sprintf("handler attribute %s is not supported (only onclick, onkeydown)", a.Key))
+			*warns = append(*warns, fmt.Sprintf("handler attribute %s is not supported (only onclick, onkeydown, onfocus, onblur, oninput, onchange)", a.Key))
 		}
 		switch a.Key {
 		case "id":
@@ -121,6 +125,9 @@ func convert(h *html.Node, parent *Node, warns *[]string) *Node {
 		case "class":
 			n.classes = strings.Fields(a.Val)
 		}
+	}
+	if (n.TagName == "button" || n.TagName == "input") && hasAttr(h, "disabled") {
+		n.Dyn |= style.StateDisabled
 	}
 	if n.TagName == "input" {
 		if t := n.Attr("type"); t != "" && strings.ToLower(t) != "text" {
@@ -180,3 +187,15 @@ func (n *Node) State() style.State { return n.Dyn }
 
 // IsWhitespace reports whether a text node contains only whitespace.
 func (n *Node) IsWhitespace() bool { return strings.TrimSpace(n.Text) == "" }
+
+func hasAttr(h *html.Node, name string) bool {
+	for _, a := range h.Attr {
+		if a.Key == name {
+			return true
+		}
+	}
+	return false
+}
+
+// Disabled reports whether n is a disabled button or input.
+func (n *Node) Disabled() bool { return n.Dyn&style.StateDisabled != 0 }

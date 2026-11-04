@@ -13,7 +13,10 @@ import (
 // fixed seeds; `make crosscheck` writes them out (TestEmitText) and records
 // Chromium's layout in testdata/text/random.json.
 
-var emitText = flag.String("emit-text", "", "write the random text documents to this directory")
+var (
+	emitText   = flag.String("emit-text", "", "write the random text documents to this directory")
+	emitInline = flag.String("emit-inline", "", "write the random inline documents to this directory")
+)
 
 const randomTextCount = 300
 
@@ -109,4 +112,85 @@ func writeRandomText(dir string) error {
 		}
 	}
 	return nil
+}
+
+// writeRandomInline writes the inline documents (TestEmitText with
+// -emit-inline).
+func writeRandomInline(dir string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	for i := 0; i < randomInlineCount; i++ {
+		name, src := randomInlineDoc(i)
+		if err := os.WriteFile(filepath.Join(dir, name+".html"), []byte(src), 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+const randomInlineCount = 150
+
+// randomInlineDoc is a random document whose paragraphs mix text with
+// inline elements (spans with font size, weight, line height and color,
+// strong, b, a, br), nested up to two levels.
+func randomInlineDoc(i int) (name, src string) {
+	r := rand.New(rand.NewPCG(uint64(i), 0x1a11e))
+	var b strings.Builder
+	var inline func(depth int)
+	inline = func(depth int) {
+		n := 1 + r.IntN(4)
+		for k := 0; k < n; k++ {
+			ws := make([]string, 1+r.IntN(5))
+			for j := range ws {
+				ws[j] = words[r.IntN(len(words))]
+			}
+			sp := []string{" ", "", " "}[r.IntN(3)]
+			b.WriteString(strings.Join(ws, " ") + sp)
+			switch x := r.IntN(10); {
+			case depth > 0 && x < 4:
+				var css []string
+				if r.IntN(2) == 0 {
+					css = append(css, fmt.Sprintf("font-size: %dpx", 9+r.IntN(16)))
+				}
+				if r.IntN(3) == 0 {
+					css = append(css, "font-weight: 700")
+				}
+				if r.IntN(4) == 0 {
+					css = append(css, []string{"line-height: 1.5", "line-height: 24px", "line-height: 1"}[r.IntN(3)])
+				}
+				tag := []string{"span", "span", "strong", "b", "a"}[r.IntN(5)]
+				fmt.Fprintf(&b, `<%s style="%s">`, tag, strings.Join(css, "; "))
+				inline(depth - 1)
+				fmt.Fprintf(&b, "</%s>", tag)
+				b.WriteString([]string{" ", "", " "}[r.IntN(3)])
+			case x == 4:
+				b.WriteString("<br>")
+			}
+		}
+	}
+	fmt.Fprintf(&b, "<!-- size: 340x420 -->\n<html><head><style>body { font-size: 14px; padding: 2px; gap: 4px; align-items: flex-start; }</style></head><body>")
+	for p := 1 + r.IntN(3); p > 0; p-- {
+		var css []string
+		if r.IntN(2) == 0 {
+			css = append(css, fmt.Sprintf("width: %dpx", 40+r.IntN(260)))
+		}
+		if r.IntN(3) == 0 {
+			css = append(css, []string{"text-align: center", "text-align: right"}[r.IntN(2)])
+		}
+		if r.IntN(4) == 0 {
+			css = append(css, []string{"line-height: 1.3", "line-height: 20px"}[r.IntN(2)])
+		}
+		if r.IntN(5) == 0 {
+			css = append(css, fmt.Sprintf("font-size: %dpx", 10+r.IntN(10)))
+		}
+		if r.IntN(6) == 0 {
+			css = append(css, "flex-direction: row")
+		}
+		fmt.Fprintf(&b, `<div style="%s">`, strings.Join(css, "; "))
+		inline(2)
+		b.WriteString("</div>")
+	}
+	b.WriteString("</body></html>\n")
+	return fmt.Sprintf("inline_%04d", i), b.String()
 }

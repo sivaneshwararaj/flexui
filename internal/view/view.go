@@ -9,6 +9,7 @@ package view
 
 import (
 	"image"
+	"io/fs"
 
 	"github.com/sivaneshwararaj/flexui/internal/dom"
 	"github.com/sivaneshwararaj/flexui/internal/geom"
@@ -54,6 +55,7 @@ type View struct {
 	hasPointer bool
 	dragging   *dom.Node // scroll container being dragged, if any
 	dragLast   geom.Point
+	thumb      *thumbDrag // scrollbar thumb being dragged, if any
 
 	// Interaction state (spec/SUBSET.md §8.3-8.5).
 	hover, active, focus *dom.Node
@@ -68,6 +70,12 @@ type View struct {
 // New returns an empty view.
 func New() *View {
 	return &View{cache: render.NewCache(), needStyle: true, scroll: map[string]geom.Point{}}
+}
+
+// SetAssets sets the file system <img src> paths are read from.
+func (v *View) SetAssets(fsys fs.FS) {
+	v.cache.Assets = fsys
+	v.needStyle = true
 }
 
 // SetSource sets the HTML and CSS of the view. Unchanged strings cost
@@ -205,7 +213,11 @@ func (v *View) Bounds(id string) (geom.Rect, bool) {
 	if d == nil {
 		return geom.Rect{}, false
 	}
-	b := d.Box(func(b *render.Box) bool { return b.El.ID() == id })
+	n := findKey(d.Dom.Root, "#"+id)
+	if n == nil {
+		return geom.Rect{}, false
+	}
+	b := d.BoxOf(n)
 	if b == nil {
 		return geom.Rect{}, false
 	}

@@ -88,11 +88,15 @@ func (v *View) setChain(old, now *dom.Node, flag style.State, ancestors bool) {
 	if old == now {
 		return
 	}
-	changed := false
+	affects := func(n *dom.Node) {
+		if v.doc != nil && !v.needStyle && v.doc.Affects(n, flag) {
+			v.needStyle = true
+		}
+	}
 	for n := old; n != nil; n = n.Parent {
 		if n.Dyn&flag != 0 {
 			n.Dyn &^= flag
-			changed = true
+			affects(n)
 		}
 		if !ancestors {
 			break
@@ -101,14 +105,11 @@ func (v *View) setChain(old, now *dom.Node, flag style.State, ancestors bool) {
 	for n := now; n != nil; n = n.Parent {
 		if n.Dyn&flag == 0 {
 			n.Dyn |= flag
-			changed = true
+			affects(n)
 		}
 		if !ancestors {
 			break
 		}
-	}
-	if changed && v.doc != nil && v.doc.Pseudo&flag != 0 {
-		v.needStyle = true
 	}
 }
 
@@ -125,10 +126,20 @@ func (v *View) setActive(n *dom.Node) {
 	v.active = n
 }
 
-// setFocus: :focus applies to the focused element only.
+// setFocus: :focus applies to the focused element only. A change sends
+// blur to the old element and focus to the new one (they do not bubble).
 func (v *View) setFocus(n *dom.Node) {
+	old := v.focus
 	v.setChain(v.focus, n, style.StateFocus, false)
 	v.focus = n
+	if old != n {
+		if old != nil {
+			v.dispatchSelf(&Event{Type: "blur", Target: old})
+		}
+		if n != nil {
+			v.dispatchSelf(&Event{Type: "focus", Target: n})
+		}
+	}
 	v.focusKey = ""
 	if n != nil {
 		v.focusKey = key(n)
@@ -185,7 +196,7 @@ func (v *View) focusable(n *dom.Node) bool {
 	if n == nil || n.Kind != dom.ElementNode {
 		return false
 	}
-	if _, ok := tabIndex(n); !ok {
+	if _, ok := tabIndex(n); !ok || n.Disabled() {
 		return false
 	}
 	for x := n; x != nil; x = x.Parent {
@@ -252,19 +263,12 @@ func (v *View) moveFocus(back bool) {
 // ---- Scrolling (§8.5) ----
 
 // scrollable: overflow: scroll boxes are user-scrollable.
-func scrollable(b *render.Box) bool { return b.Style.Overflow == style.OverflowScroll }
-
-// maxScroll returns the scroll range of a scroll container: its content
-// extent minus its padding box.
-func maxScroll(b *render.Box) geom.Point {
-	bx := b.Lay.Box
-	cw := bx.W - bx.Border.Left - bx.Border.Right
-	ch := bx.H - bx.Border.Top - bx.Border.Bottom
-	return geom.Point{X: geom.Max(0, bx.ContentW-cw), Y: geom.Max(0, bx.ContentH-ch)}
+func scrollable(b *render.Box) bool {
+	return !b.Inline && b.Lay != nil && b.Style.Overflow == style.OverflowScroll
 }
 
 func clampScroll(b *render.Box, o geom.Point) geom.Point {
-	m := maxScroll(b)
+	m := b.MaxScroll()
 	return geom.Point{X: min(max(o.X, 0), m.X), Y: min(max(o.Y, 0), m.Y)}
 }
 
@@ -272,7 +276,7 @@ func clampScroll(b *render.Box, o geom.Point) geom.Point {
 // that can scroll at all.
 func (v *View) scrollerFor(n *dom.Node) *dom.Node {
 	for ; n != nil; n = n.Parent {
-		if b := v.doc.BoxOf(n); b != nil && scrollable(b) && maxScroll(b) != (geom.Point{}) {
+		if b := v.doc.BoxOf(n); b != nil && scrollable(b) && b.MaxScroll() != (geom.Point{}) {
 			return n
 		}
 	}

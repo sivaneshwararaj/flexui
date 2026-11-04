@@ -179,3 +179,27 @@ declaration strings. Each case is checked two ways:
   caching counters via `view.Stats`), `interact_test.go` (hover, active,
   focus, keyboard, scrolling goldens and behavior),
   `internal/render/hit_test.go` (z-order cases, hit == paint property).
+
+## Inline formatting and replaced elements (M5b)
+
+* `render/inline.go`: `build` groups each maximal run of text and inline
+  elements (`isInline`: display inline, inline all the way down) into an
+  anonymous box via `inlineBox`, which collects `text.Run`s (text, layout
+  style, enclosing inline styles) and creates `Inline` boxes for the
+  elements (in `Document.boxes`, not in the flex tree). After placement,
+  `placeInline` computes their fragments (per line: horizontal text
+  extent, content area of their font). `paintText` draws inline
+  backgrounds, then glyph runs per text run in its owner's color. The
+  hitter checks fragments.
+* `text`: a `Text` is a paragraph of runs; advances are in fine units
+  (font units x size) so mixed sizes sum exactly; shaping runs per font,
+  widths rounded per run ("pieces", Chromium's inline items); line boxes
+  from the strut and the runs (and their enclosing boxes) on each line.
+* `render/ua.css`: the default style sheet (embedded; also loaded by the
+  Chromium oracle). `style.Rule.UA` puts it below author rules.
+* `render/image.go` (`<img>`, `Cache.Assets`, decoded-image cache),
+  `paint/image.go` (bilinear `DrawImage`), `layout.AspectRatio`.
+* `render/scrollbar.go`: overlay scrollbar geometry (`Box.Thumbs`), drawn
+  by the painter inside the container's clip; `view/scrollbar.go` drags
+  thumbs.
+* `render/input.go`: `<input>` measuring (one line, 160px).

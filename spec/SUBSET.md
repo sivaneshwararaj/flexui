@@ -12,11 +12,13 @@ deviation is listed under **Deviations** with the reason.
 
 | Element | Behavior |
 |---|---|
-| `div`, `span`, `p`, `h1`, `h2`, `h3`, `ul`, `li` | Flex container. No built-in margins, bullets or font changes unless a later milestone adds a default style sheet (to be listed here). |
-| `button` | Flex container; clickable; focusable (M5/M6). |
-| `a` | Flex container; clickable; focusable. No navigation, `href` is ignored. |
-| `input` (text only) | Single-line text field (M8). Other `type`s warn and are treated as `text`. |
-| `img` | Replaced leaf element; `src` will be resolved through an `io/fs.FS`. **Not loaded yet**: an empty box plus a warning. |
+| `div`, `p`, `h1`, `h2`, `h3`, `ul`, `li` | Flex container. No built-in margins, bullets or font changes. |
+| `span`, `strong`, `b`, `em`, `i` | **Inline** (`display: inline` in the default style sheet): part of an inline formatting context with the surrounding text (§7.1). `strong`/`b` are bold; `em`/`i` are upright (D30: no italic face). |
+| `a` | Inline; colored by the default style sheet; clickable and focusable. No navigation, `href` is ignored. |
+| `br` | Forced line break inside inline content. |
+| `button` | Flex container (row, centered) with a default style (§1.1); clickable; focusable; `disabled` supported. |
+| `input` (text only) | Single-line text field with a default style; one line of text tall, 160px wide (§1.3); editing from M8. `disabled` supported. Other `type`s warn and are treated as `text`. |
+| `img` | Replaced leaf element showing a PNG or JPEG (§1.2). |
 | `body` | The **root element** (see below). |
 | `head`, `title`, `meta`, `link`, `style`, `template`, `noscript` | Not rendered. `<style>` contents are style sheets. |
 | `script` | Ignored, with a warning (no JavaScript). |
@@ -28,15 +30,56 @@ browsers. The `<body>` element is the root of the rendered tree: it fills
 the viewport (§2.6) and can be styled with `body { ... }`. `<html>` is not
 part of the tree.
 
-Text runs are anonymous leaf boxes, each a flex item of its parent (§7).
+Text and inline elements form anonymous inline boxes, each a flex item of
+its parent (§7.1).
+
+Documents are always laid out in **standards mode** (no quirks), whether
+or not they have a doctype.
+
+### 1.1 Default style sheet
+
+flexui has a small user-agent style sheet, `internal/render/ua.css`
+(listed there in full). Its rules lose to every author rule, whatever
+their specificity (CSS cascade origins), and to inline styles. It makes
+`span, a, strong, b, em, i, br` inline, `strong`/`b` bold, `a` blue, and
+gives `button` and `input` a light bordered look with `:hover`, `:active`,
+`:focus` and `:disabled` states. **D27**: these defaults are flexui's own,
+not browsers' (which differ by platform); the Chromium oracle loads the
+same sheet.
+
+### 1.2 Images
+
+* `<img src>` is a `data:` URL (base64 or percent-encoded) or a path in
+  `Options.Assets` (an `io/fs.FS`; a leading `/` is ignored). Other URLs
+  and missing files warn and leave an empty box. PNG and JPEG are decoded
+  with Go's standard library (deterministic, integer).
+* Natural size: one image pixel per logical pixel. The image is a
+  measured leaf with its natural width as min- and max-content, its
+  height following the width through the aspect ratio, and its width
+  following a definite height (`layout.AspectRatio`). Images fill their
+  content box (no `object-fit`).
+* Drawing: §6.5. Content is clipped to the rounded padding box when
+  `border-radius` is set. **D28**: Chromium (with the oracle's base
+  sheet) does not clip the image to the radius; CSS Backgrounds §5.3 says
+  it should, so flexui does. **D29**: JPEG decoding (Go vs.
+  libjpeg-turbo chroma upsampling) and the scaling filter differ from
+  Chromium by a few levels; layout is identical.
+
+### 1.3 Inputs
+
+An `<input>` is a measured leaf: one line of its font tall, with 160px as
+its min- and max-content width, so a flex row does not shrink it below
+that (as Chromium does).
+
 
 ## 2. Layout model
 
-* Every element is a flex container (`display: flex`). There is no normal
-  flow, inline formatting, floats, inline-block, tables, grid, or margin
+* Every element is a flex container (`display: flex`), except inline
+  elements inside text (§7.1). There is no normal
+  flow, floats, inline-block, tables, grid, or margin
   collapsing.
-* `display` accepts `flex` (initial) and `none`. Any other value (`block`,
-  `inline`, `grid`, ...) warns and is ignored.
+* `display` accepts `flex` (initial), `inline` (§7.1) and `none`. Any
+  other value (`block`, `grid`, ...) warns and is ignored.
 * Initial `flex-direction` is **`column`** (CSS: `row`).
 * Initial `position` is **`relative`** (CSS: `static`). So every element is a
   containing block for its absolutely positioned children (same as React
@@ -50,7 +93,7 @@ Numbers are plain decimals (`12`, `-3.5`, `.25`). Exponents, `calc()`, `em`,
 
 | Property | Values | Initial | Notes |
 |---|---|---|---|
-| `display` | `flex` \| `none` | `flex` | |
+| `display` | `flex` \| `inline` \| `none` | `flex` | | `inline`: §7.1 |
 | `position` | `relative` \| `absolute` | `relative` | `static`, `fixed`, `sticky` unsupported |
 | `flex-direction` | `row` \| `row-reverse` \| `column` \| `column-reverse` | `column` | |
 | `flex-wrap` | `nowrap` \| `wrap` \| `wrap-reverse` | `nowrap` | |
@@ -254,7 +297,7 @@ content-sized).
 
 Supported: type (`div`), class (`.a`), id (`#a`), universal (`*`),
 compound (`div.a#b`), descendant (`a b`), child (`a > b`), selector lists
-(`a, b`), pseudo-classes `:hover`, `:focus`, `:active`. Type selectors are
+(`a, b`), pseudo-classes `:hover`, `:focus`, `:active`, `:disabled`. Type selectors are
 case-insensitive; ids and classes are case-sensitive.
 
 Unsupported selectors (`+`, `~`, attribute selectors, pseudo-elements,
@@ -270,6 +313,8 @@ element's `style=""` attribute.
 Cascade order, lowest to highest:
 
 1. Inherited or initial values.
+1. The default (user-agent) style sheet (§1.1), by specificity then
+   source order.
 2. Matching rules by ascending **specificity**, ties broken by source
    order (later wins). Specificity is the CSS triple (a, b, c): a counts
    id selectors, b counts class selectors and pseudo-classes, c counts type
@@ -347,6 +392,7 @@ padding box with the inner radii. `opacity < 1` becomes an opacity group.
    elliptical.
 5. **Glyphs**: the baseline rounds to the nearest device pixel, the pen x
    to the nearest quarter device pixel (§7.4).
+6. **Images** fill their snapped content rectangle (§6.5).
 
 ### 6.2 Anti-aliasing and compositing
 
@@ -462,21 +508,51 @@ Every element is positioned (D2), which simplifies CSS 2 Appendix E:
   behind `body`'s background, and is hidden if `body` has one, as in
   browsers.
 
+### 6.5 Images
+
+Each device pixel of the snapped destination rectangle samples the
+source at its center with bilinear filtering in 16.16 fixed point on
+premultiplied RGBA (edge texels clamp; no mipmaps, so strong
+downscaling aliases), and composites source-over (§6.3) through the
+clip. A 1:1 mapping copies source pixels exactly.
+
 ## 7. Text (M4)
 
-### 7.1 Text runs and anonymous boxes
+### 7.1 Inline formatting and anonymous boxes
 
-* A maximal run of adjacent text nodes in an element is one **text run**.
-  After white-space processing (§7.2), a run with no characters left is
-  dropped (as CSS drops white-space-only text in flex containers).
-* Each run becomes an **anonymous box**: a flex item of its parent, with
-  the inherited properties of the parent (`color`, `font-*`,
-  `line-height`, `text-align`, `white-space`) and initial values for all
-  others (`flex: 0 1 auto`, `min-width: auto`, no padding or border).
-  This is exactly CSS's anonymous block for text in a flex container.
-* So text and elements never share a line: `a <span>b</span> c` is three
-  flex items (stacked in a column by default, D1). There is no inline
-  formatting across elements.
+* An element is **inline** when its computed `display` is `inline` and
+  every element inside it is inline too; otherwise it is laid out as a
+  flex item (with a warning if it was meant to be inline).
+* Among an element's children, each maximal run of text nodes and inline
+  elements forms one **anonymous box** holding an inline formatting
+  context: a flex item of the parent, with the inherited properties of
+  the parent (`color`, `font-*`, `line-height`, `text-align`,
+  `white-space`) and initial values for all others (`flex: 0 1 auto`,
+  `min-width: auto`, no padding or border), exactly CSS's anonymous block.
+  A run without any text after white-space processing is dropped, and its
+  inline elements become flex items.
+* Inside, text flows across inline elements: each text node is a run
+  with its element's `font-weight`, `font-size`, `line-height` and
+  `color`; white space collapses across run boundaries; shaping
+  continues across element boundaries when the font is the same (so
+  kerning applies, as in Chromium); widths are rounded per run.
+* **Line boxes** (CSS 2.1 §10.8, all baselines aligned): each line's
+  height is the maximum extent above and below the baseline of the
+  block's strut and of every inline box with content on the line,
+  including the boxes that enclose that content. An inline box extends
+  above the baseline by its ascent plus half its leading (rounded down to
+  a whole pixel), and below by the rest of its line height.
+* Inline elements support `color`, `font-*`, `line-height` and
+  `background-color` (painted behind each fragment's content area: the
+  text's horizontal extent, from ascent to descent of the element's font,
+  CSS 2.1 §10.6.1). Box properties (`padding`, `margin`, `border`,
+  `width`/`height`, `position`, `overflow`, `opacity`, `box-shadow`,
+  `border-radius`) warn and have no effect. `white-space`, `text-align`
+  and `text-overflow` come from the block. There is no `vertical-align`
+  (everything is on the baseline).
+* Inline elements are hit-tested by their fragments, take `:hover` /
+  `:active` / `:focus`, receive events, and report their bounds
+  (`App.Bounds`) as the union of their fragments.
 * **D24**: if the parent has `text-overflow: ellipsis` and `overflow`
   other than `visible`, the anonymous box takes that `overflow` and
   `text-overflow` (so `<div class=title>Long title</div>` ellipsizes). In
@@ -484,9 +560,9 @@ Every element is positioned (D2), which simplifies CSS 2 Appendix E:
   container never shows an ellipsis.
 * The box is a leaf with a `layout.Measurer`: `Widths()` returns the
   min-content and max-content widths, and `Height(w)` lays the text out
-  at content width `w` and returns lines × line height. The engine sizes
-  it as fit-content (D10) and asks for the height at exactly the final
-  width.
+  at content width `w` and returns the sum of the line heights. The
+  engine sizes it as fit-content (D10) and asks for the height at exactly
+  the final width.
 * Painting: anonymous boxes are not positioned, so a positioned element's
   text paints right after its own background and border, before its
   element children (CSS 2 Appendix E, §6.4). An ellipsizing box clips its
@@ -565,15 +641,17 @@ Every element is positioned (D2), which simplifies CSS 2 Appendix E:
 |---|---|---|
 | D21 | Glyph anti-aliasing differs from Chromium (FreeType coverage with Skia's luminance-dependent contrast/gamma "preblend"). Glyph positions agree; individual edge pixels differ, by up to about 50 of 255 levels, mean error about 0.3-0.5 levels per text document. | Integer-only own rasterizer; deterministic everywhere. |
 | D22 | Layout is independent of the device scale. Chromium rounds `line-height: normal` metrics in device pixels, so at 2x its lines can be up to 0.5 px (one device pixel) shorter. | Same layout on every display; HiDPI is a paint-time scale only. |
-| D23 | Kerning between the last character of a soft-wrapped line and the following space is kept. Chromium sometimes reshapes the line without it (we could not derive when), so such a line can be up to ~0.8 px wider in Chromium (2 of 300 random documents). | Rare; affects alignment by under 1 px. |
+| D23 | Shaping at a soft line end: Chromium sometimes measures a line that ends at a soft break (typically after "Hello,") about 100 font units wider than its shaped advance; we could not derive when. Lines then differ by under 1 px, and rarely the break moves (6 of 450 random documents). | Rare; under 1 px except for one changed break. |
 | D24 | Text in an element with `text-overflow: ellipsis` and clipping `overflow` ellipsizes (§7.1); in CSS it would not, because the anonymous box does not inherit them. | What authors expect; Chromium comparisons wrap text runs in an equivalent block that takes these properties. |
+| D30 | `em` and `i` are not italic, and `font-style` is not supported: only upright Regular and Bold faces are bundled. | Binary size; add an italic face later. |
 
 ## 8. Interaction (M5, M6)
 
 ### 8.1 Handlers and events
 
-* An element declares handlers by name with attributes: `onclick="Save"`
-  and `onkeydown="Key"` (M6). Go registers them with
+* An element declares handlers by name with attributes: `onclick="Save"`,
+  `onkeydown`, `onfocus`, `onblur` (and `oninput`, `onchange` for inputs,
+  M8). Go registers them with
   `app.Handle("Save", func(c *flexui.Ctx) {...})`. Other `on*` attributes
   warn. A name with no registered Go handler warns once (in
   `App.Warnings`) when it would have run.
@@ -646,11 +724,22 @@ Every element is positioned (D2), which simplifies CSS 2 Appendix E:
   naturally focusable elements in tree order; negative `tabindex` is
   skipped; wraps around); Enter clicks a focused `button` or `a`; Space
   clicks a focused `button` on release.
-* **D26**: there is no default focus ring (no UA style sheet): style
-  `:focus` in the app's CSS. `disabled` is not supported yet.
+* **D26**: there is no general focus ring: the default style sheet gives
+  `button` and `input` a blue border on `:focus`; other focusable elements
+  need a `:focus` rule in the app's CSS.
+* **`disabled`** (on `button` and `input`): the element matches
+  `:disabled`, is not focusable, gets no `:active`, and no click is
+  dispatched to it or, through it, to its ancestors (as in browsers).
+* **Focus events**: `onfocus` and `onblur` run when focus changes by
+  pointer, keyboard or `App.Focus`. They do not bubble. They do not run
+  when a re-render merely carries focus over to the new document.
 
 ### 8.5 Scroll containers
 
+* Scroll containers that overflow draw **overlay scrollbars**: a thumb
+  per scrollable axis, 6px wide, 2px from the padding box edges, at
+  least 20px long, rounded, black at 35% opacity, over the content. The
+  thumb can be dragged (pressing it does not focus, activate or click).
 * `overflow: scroll` makes an element a scroll container that the user
   can scroll; `overflow: hidden` only clips (as in CSS). The scroll range
   is the content extent (layout's scrollable overflow, measured from the
@@ -666,8 +755,10 @@ Every element is positioned (D2), which simplifies CSS 2 Appendix E:
   after every layout.
 * Scroll offsets are kept across re-renders by element key (§8.2: `id`,
   or tree position), and re-clamped to the new content.
-* **D25**: no scrollbars are drawn and none take space (like overlay
-  scrollbars). There is no keyboard scrolling and no inertia yet.
+* **D25**: scrollbars are overlay scrollbars and take no space (like
+  Chromium with hidden scrollbars, as in the oracle); they are always
+  shown while content overflows. There is no keyboard scrolling, no track
+  clicking and no inertia yet.
 
 ## 5. Verification
 
@@ -707,7 +798,10 @@ Layout behavior is checked against Chromium:
   `scripts/textcheck.cjs`). Inputs: 12 hand-written documents in
   `testdata/text/docs` (wrapping, sizes, weights, alignment, line height,
   white space, ellipsis, row items, nested content-sized boxes, mixed
-  content) and 300 seeded random documents. Accepted mismatches are listed
+  content, inline formatting) and 300 seeded random documents, plus 150
+  seeded random documents of inline content (nested spans with sizes,
+  weights, line heights, links, `br`, alignment). The oracle runs in
+  standards mode with flexui's default style sheet. Accepted mismatches are listed
   in `knownTextDiffs` with a deviation and a tolerance (D14 rounding of
   flex sizes: 2/64 px; D23: 0.5 px); the test fails if a listed case
   starts matching exactly. Text RenderHTML documents are also in the

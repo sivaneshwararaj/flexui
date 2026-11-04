@@ -1,6 +1,8 @@
 package render
 
 import (
+	"io/fs"
+
 	"github.com/sivaneshwararaj/flexui/internal/style"
 	"github.com/sivaneshwararaj/flexui/internal/text"
 )
@@ -10,8 +12,11 @@ import (
 // Entries not used by the latest build are dropped, so memory follows the
 // current view. A Cache is not safe for concurrent use.
 type Cache struct {
+	// Assets resolves <img src> paths (nil: only data: URLs).
+	Assets fs.FS
+	images map[string]*imageEntry
 	sheets map[sheetKey]*sheetEntry
-	texts  map[textKey]*textEntry
+	texts  map[string]*textEntry
 	gen    uint64
 	Stats  Stats
 }
@@ -36,11 +41,6 @@ type sheetEntry struct {
 	gen   uint64
 }
 
-type textKey struct {
-	raw string
-	p   text.Params
-}
-
 type textEntry struct {
 	t   *text.Text
 	gen uint64
@@ -48,7 +48,7 @@ type textEntry struct {
 
 // NewCache returns an empty cache.
 func NewCache() *Cache {
-	return &Cache{sheets: map[sheetKey]*sheetEntry{}, texts: map[textKey]*textEntry{}}
+	return &Cache{images: map[string]*imageEntry{}, sheets: map[sheetKey]*sheetEntry{}, texts: map[string]*textEntry{}}
 }
 
 func (c *Cache) sheet(src string, order int) (*style.Sheet, []style.Warning) {
@@ -64,12 +64,12 @@ func (c *Cache) sheet(src string, order int) (*style.Sheet, []style.Warning) {
 	return e.sheet, e.warns
 }
 
-func (c *Cache) text(raw string, p text.Params) *text.Text {
-	k := textKey{raw, p}
+func (c *Cache) text(runs []text.Run, p text.Params) *text.Text {
+	k := textKey(runs, p)
 	e, ok := c.texts[k]
 	if !ok {
 		c.Stats.TextShapes++
-		e = &textEntry{t: text.New(raw, p)}
+		e = &textEntry{t: text.NewRuns(runs, p)}
 		c.texts[k] = e
 	}
 	e.gen = c.gen
@@ -81,6 +81,11 @@ func (c *Cache) sweep() {
 	for k, e := range c.sheets {
 		if e.gen != c.gen {
 			delete(c.sheets, k)
+		}
+	}
+	for k, e := range c.images {
+		if e.gen != c.gen {
+			delete(c.images, k)
 		}
 	}
 	for k, e := range c.texts {

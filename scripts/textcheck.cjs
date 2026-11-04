@@ -1,7 +1,8 @@
 // Records Chromium's layout of the text documents in a directory: the
 // border box of every element and anonymous text box (<x-t>) in tree
-// order, and for every text box its lines (text with collapsible spaces
-// trimmed, and the line's ink-independent rectangle from a Range).
+// order (inline elements: the union of their fragments), and for every
+// text box its lines (text with collapsible spaces trimmed, and the
+// extent of its characters' content areas).
 // Prints JSON {name: {boxes: [[x,y,w,h]...], lines: [[[text,x,y,w,h]...]...]}}.
 const fs = require('fs');
 const path = require('path');
@@ -12,17 +13,17 @@ const dir = process.argv[2];
 
 function measure() {
   const r = (e) => { const b = e.getBoundingClientRect(); return [b.x, b.y, b.width, b.height]; };
-  const els = [document.body, ...document.body.querySelectorAll('*')].filter((e) => getComputedStyle(e).display !== 'none' || true);
-  const boxes = els.filter((e) => !['STYLE', 'SCRIPT'].includes(e.tagName)).map((e) => {
-    if (getComputedStyle(e).display === 'none' || e.closest('[style*="display: none"]')) return null;
-    return r(e);
-  });
+  const els = [document.body, ...document.body.querySelectorAll('*')]
+    .filter((e) => !['STYLE', 'SCRIPT', 'BR'].includes(e.tagName));
+  const boxes = els.map(r);
   const lines = [];
   for (const t of document.body.querySelectorAll('x-t')) {
     const ws = getComputedStyle(t).whiteSpace;
     const pre = /^pre/.test(ws);
-    // Characters with their line (by client rect top).
+    // Characters in order; a character starts a new line when it is
+    // entirely below the current one (lines never overlap vertically).
     const ls = [];
+    let cur = null;
     const walker = document.createTreeWalker(t, NodeFilter.SHOW_TEXT);
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
       for (let i = 0; i < n.data.length; i++) {
@@ -31,19 +32,25 @@ function measure() {
         const rs = rg.getClientRects();
         if (!rs.length) continue; // collapsed white space
         const b = rs[0];
-        let l = ls.find((l) => l.top === b.top);
-        if (!l) { l = { top: b.top, text: '', x0: Infinity, x1: -Infinity, ranges: [] }; ls.push(l); }
-        const ch = n.data[i];
-        l.text += ch === '\n' ? '' : ch;
-        if (b.width > 0 || !/\s/.test(ch)) {
-          if (!/\s/.test(ch) || ws === 'pre') { l.x0 = Math.min(l.x0, b.left); l.x1 = Math.max(l.x1, b.right); }
+        if (b.width === 0 && /\s/.test(n.data[i])) continue; // collapsed space
+        // New line: entirely below the current one, or the pen moved back
+        // left: character left edges increase along a line, even when kerned
+        // (lines can overlap vertically with a small line-height).
+        if (!cur || b.top >= cur.bottom || b.left <= cur.lastLeft) {
+          cur = { top: b.top, bottom: b.bottom, text: '', x0: Infinity, x1: -Infinity, lastLeft: -Infinity };
+          ls.push(cur);
         }
-        l.h = b.height;
+        cur.lastLeft = b.left;
+        cur.top = Math.min(cur.top, b.top);
+        cur.bottom = Math.max(cur.bottom, b.bottom);
+        const ch = n.data[i];
+        cur.text += ch === '\n' ? '' : ch;
+        if (!/\s/.test(ch) || ws === 'pre') { cur.x0 = Math.min(cur.x0, b.left); cur.x1 = Math.max(cur.x1, b.right); }
       }
     }
     lines.push(ls.map((l) => {
-      let s = pre ? l.text.replace(/ +$/, '') : l.text.replace(/[ \t\n\r\f]+/g, ' ').trim();
-      return [s, l.x0, l.top, l.x1 - l.x0, l.h];
+      const s = pre ? l.text.replace(/ +$/, '') : l.text.replace(/[ \t\n\r\f]+/g, ' ').trim();
+      return [s, l.x0, l.top, l.x1 - l.x0, l.bottom - l.top];
     }));
   }
   return { boxes, lines };

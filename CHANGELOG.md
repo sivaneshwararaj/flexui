@@ -6,6 +6,12 @@ versioning with `v0.x` tags until the API settles.
 ## Unreleased
 
 ### Added
+- M5b: inline formatting across `span`, `a`, `strong`/`b`, `em`/`i`,
+  `br` (mixed sizes, weights, line heights, colors, backgrounds); `<img>`
+  (PNG/JPEG, `data:` URLs or `Options.Assets`); a default style sheet for
+  links, buttons and inputs; `:disabled` and the `disabled` attribute;
+  `onfocus`/`onblur`; overlay scrollbars with draggable thumbs;
+  `display: inline`; `layout.AspectRatio`.
 - M6 interaction: hit testing in paint order, `:hover`/`:active`/`:focus`
   styles, pointer and keyboard focus (Tab order with tabindex), Enter and
   Space activation, `onkeydown` with `Ctx.PreventDefault`, `App.Focus`,
@@ -48,6 +54,9 @@ versioning with `v0.x` tags until the API settles.
   trees) and a test-case reducer.
 
 ### Changed
+- `span`, `a`, `strong`, `b`, `em`, `i` are inline by default (they were
+  flex items); buttons and inputs have default styles. Documents are laid
+  out in standards mode (the Chromium oracle now uses a doctype).
 - The cascade orders rules by CSS specificity (id, class/pseudo-class,
   type), then source order; the source-order cascade and its
   pseudo-class layer (deviation D7) are gone.

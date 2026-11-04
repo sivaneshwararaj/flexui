@@ -7,30 +7,56 @@ import (
 	"github.com/sivaneshwararaj/flexui/internal/style"
 )
 
-// Params are the resolved text properties of one anonymous text run
-// (spec/SUBSET.md §7).
-type Params struct {
+// Style is the part of a run's style that affects layout.
+type Style struct {
 	Weight     int
 	Size       geom.Unit // font size
 	LineHeight style.LineHeight
-	WhiteSpace style.WhiteSpace
-	Align      style.TextAlign
-	Ellipsis   bool // text-overflow: ellipsis applies (the run clips)
 }
 
-// Text is a prepared text run: white space processed, shaped, and split
-// into break opportunities. Widths are kept in font units (exact
-// integers) and converted to geom.Unit only when compared or reported.
+// Params are the properties of a paragraph: the style of the block that
+// holds it (which also gives each line its strut, CSS 2.1 §10.8.1) and
+// the block-level text properties (spec/SUBSET.md §7).
+type Params struct {
+	Style
+	WhiteSpace style.WhiteSpace
+	Align      style.TextAlign
+	Ellipsis   bool // text-overflow: ellipsis applies (the box clips)
+}
+
+// Run is a piece of a paragraph with one style: the text of a text node
+// in an inline element (or directly in the block), or a forced line break
+// (<br>).
+type Run struct {
+	Text  string
+	Style Style
+	Break bool // a forced line break; Text is ignored
+	// Outer are the styles of the inline boxes that enclose the run's own
+	// box (outermost first). They take part in the height of every line
+	// the run is on (CSS 2.1 §10.8).
+	Outer []Style
+}
+
+// Text is a prepared paragraph: white space processed, shaped, and split
+// into break opportunities. Advances are kept in "fine units" (font units
+// x font size in 1/64 px, exact integers, so runs of different sizes add
+// up exactly) and converted to geom.Unit only when compared or reported.
 type Text struct {
 	p    Params
-	face *Face
+	runs []Run
+	rs   []runInfo // per run: face and metrics
 	// runes after white-space processing. '\n' is a forced break, '\t' a
 	// tab (only with white-space: pre / pre-wrap).
 	runes []rune
-	adv   []int32 // advance of each rune in font units (cluster advance on its first rune)
-	// pos[i] is the pen position before rune i, in font units from the
+	run   []int32 // run index of each rune
+	adv   []int64 // advance of each rune in fine units (cluster advance on its first rune)
+	// pos[i] is the pen position before rune i, in fine units from the
 	// start of its hard line (tabs resolved there); len(pos) = len(runes)+1.
 	pos []int64
+	// Pieces (Chromium's inline items): maximal ranges of runes of one
+	// run, split at tabs and forced breaks. pstart[i] and pend[i] bound
+	// the piece of rune i. Widths are rounded per piece.
+	pstart, pend []int
 	// glyphs in logical order; Glyph.Cluster indexes runes.
 	glyphs []Glyph
 	// segs are the break opportunities: segment i spans
@@ -38,15 +64,32 @@ type Text struct {
 	// that hang at a line end.
 	segs []segment
 
-	lineHeight geom.Unit
-	ascent     geom.Unit // rounded, as used for the baseline
-	descent    geom.Unit
-	tabStop    int32 // font units
+	strut   runInfo // the block's own metrics
+	tabStop int64   // fine units
+	upem    int64
 
 	minW, maxW geom.Unit
 	last       *Block // cache of the last layout
 	lastW      geom.Unit
 }
+
+type runInfo struct {
+	outer      []runInfo
+	face       *Face
+	size       geom.Unit
+	ascent     geom.Unit // rounded, as used for the baseline
+	descent    geom.Unit
+	lineHeight geom.Unit
+}
+
+// above and below return the run's extent above and below the baseline
+// in a line box: its ascent plus half the leading (rounded down to a
+// whole pixel, as Chromium does), and the rest of its line height.
+func (r *runInfo) above() geom.Unit {
+	l := r.lineHeight - r.ascent - r.descent
+	return r.ascent + geom.Unit(floorDiv(int64(l), 2*geom.UnitsPerPx))*geom.UnitsPerPx
+}
+func (r *runInfo) below() geom.Unit { return r.lineHeight - r.above() }
 
 type segment struct {
 	start, end int
@@ -67,37 +110,57 @@ type Line struct {
 	Width      geom.Unit // advance width of [Start, End)
 	X          geom.Unit // offset from the content box left (text-align)
 	Top        geom.Unit // offset of the line box from the content box top
+	Height     geom.Unit // line box height
 	Baseline   geom.Unit // offset of the baseline from the content box top
 	// Ellipsis is set when the line was truncated: content is
-	// [Start, End) and an ellipsis glyph follows at X+Width.
+	// [Start, End) and an ellipsis glyph follows at X+Width. FullEnd is
+	// the end before truncation (the hidden content still has positions).
 	Ellipsis bool
+	FullEnd  int
 }
 
-// New prepares s with the parameters p. s is the raw text of the run
-// (adjacent text nodes concatenated); white space is processed here.
+// New prepares the single-style paragraph s.
 func New(s string, p Params) *Text {
-	t := &Text{p: p, face: ForWeight(p.Weight)}
-	t.runes = processWhiteSpace(s, p.WhiteSpace)
-	t.metrics()
+	return NewRuns([]Run{{Text: s, Style: p.Style}}, p)
+}
+
+// NewRuns prepares a paragraph made of runs (raw text; white space is
+// processed here, across run boundaries).
+func NewRuns(runs []Run, p Params) *Text {
+	t := &Text{p: p, runs: runs}
+	t.strut = info(p.Style)
+	t.upem = int64(t.strut.face.Upem)
+	for _, r := range runs {
+		ri := info(r.Style)
+		for _, o := range r.Outer {
+			ri.outer = append(ri.outer, info(o))
+		}
+		t.rs = append(t.rs, ri)
+	}
+	t.processWhiteSpace()
 	t.shape()
 	t.positions()
+	t.pieces()
 	t.segment()
 	t.intrinsic()
 	return t
 }
 
-// Empty reports whether the run has no characters after white-space
-// processing (such runs are not rendered).
+// Empty reports whether the paragraph has no characters after white-space
+// processing (such paragraphs are not rendered).
 func (t *Text) Empty() bool { return len(t.runes) == 0 }
 
 // String returns the processed text.
 func (t *Text) String() string { return string(t.runes) }
 
-// Face returns the font face used for the run.
-func (t *Text) Face() *Face { return t.face }
-
-// Params returns the run's parameters.
+// Params returns the paragraph's parameters.
 func (t *Text) Params() Params { return t.p }
+
+// RunOf returns the index of the run that rune i belongs to.
+func (t *Text) RunOf(i int) int { return int(t.run[i]) }
+
+// RunFace returns the face and size of run i.
+func (t *Text) RunFace(i int) (*Face, geom.Unit) { return t.rs[i].face, t.rs[i].size }
 
 func isCollapsible(ws style.WhiteSpace) bool {
 	return ws == style.WhiteSpaceNormal || ws == style.WhiteSpaceNowrap
@@ -107,133 +170,153 @@ func wraps(ws style.WhiteSpace) bool {
 	return ws == style.WhiteSpaceNormal || ws == style.WhiteSpacePreWrap
 }
 
-// processWhiteSpace applies CSS Text 3 §4.1.1 phase I and the line-start
-// / line-end removal of phase II that does not depend on wrapping. With
-// normal / nowrap: tabs and newlines become spaces, runs of spaces collapse
-// to one, and spaces at the start and end of the run are removed. With
-// pre / pre-wrap everything is preserved; "\r\n" and "\r" become "\n".
-func processWhiteSpace(s string, ws style.WhiteSpace) []rune {
-	out := make([]rune, 0, len(s))
-	if isCollapsible(ws) {
-		space := true // at the start, so leading spaces are dropped
-		for _, r := range s {
-			switch r {
-			case ' ', '\t', '\n', '\r', '\f':
-				if !space {
-					out = append(out, ' ')
-					space = true
-				}
-			default:
-				out = append(out, r)
-				space = false
-			}
-		}
-		if len(out) > 0 && out[len(out)-1] == ' ' {
-			out = out[:len(out)-1]
-		}
-		return out
+func info(s Style) runInfo {
+	f := ForWeight(s.Weight)
+	r := runInfo{face: f, size: s.Size}
+	round := func(fu int32) geom.Unit {
+		num := int64(fu) * int64(s.Size) // 1/64 px * upem
+		den := int64(f.Upem) * geom.UnitsPerPx
+		return geom.Px(int((num + den/2) / den))
 	}
-	rs := []rune(s)
-	for i := 0; i < len(rs); i++ {
-		r := rs[i]
-		if r == '\r' {
-			if i+1 < len(rs) && rs[i+1] == '\n' {
+	r.ascent, r.descent = round(f.Ascent), round(f.Descent)
+	switch lh := s.LineHeight; lh.Kind {
+	case style.LineHeightNormal:
+		r.lineHeight = r.ascent + r.descent + round(f.LineGap)
+	case style.LineHeightNumber:
+		r.lineHeight = geom.Unit(geom.MulDiv(int64(lh.V), int64(s.Size), 1000))
+	default:
+		r.lineHeight = geom.Unit(lh.V)
+	}
+	return r
+}
+
+// processWhiteSpace applies CSS Text 3 §4.1.1 phase I and the line-start
+// / line-end removal of phase II that does not depend on wrapping, across
+// the runs. With normal / nowrap: tabs and newlines become spaces, runs of
+// spaces collapse to one (also across run boundaries; the space stays in
+// the earlier run), and spaces at the start and end of the paragraph and
+// around forced breaks are removed. With pre / pre-wrap everything is
+// preserved; "\r\n" and "\r" become "\n", and a final newline does not
+// start an empty line.
+func (t *Text) processWhiteSpace() {
+	collapse := isCollapsible(t.p.WhiteSpace)
+	space := true // at the start, so leading spaces are dropped
+	push := func(r rune, ri int) {
+		t.runes = append(t.runes, r)
+		t.run = append(t.run, int32(ri))
+	}
+	trim := func() {
+		if n := len(t.runes); n > 0 && t.runes[n-1] == ' ' {
+			t.runes, t.run = t.runes[:n-1], t.run[:n-1]
+		}
+	}
+	for ri, run := range t.runs {
+		if run.Break {
+			if collapse {
+				trim()
+			}
+			push('\n', ri)
+			space = true
+			continue
+		}
+		rs := []rune(run.Text)
+		for i := 0; i < len(rs); i++ {
+			r := rs[i]
+			if collapse {
+				switch r {
+				case ' ', '\t', '\n', '\r', '\f':
+					if !space {
+						push(' ', ri)
+						space = true
+					}
+				default:
+					push(r, ri)
+					space = false
+				}
 				continue
 			}
-			r = '\n'
+			if r == '\r' {
+				if i+1 < len(rs) && rs[i+1] == '\n' {
+					continue
+				}
+				r = '\n'
+			}
+			if r == '\f' {
+				r = ' '
+			}
+			push(r, ri)
 		}
-		if r == '\f' {
-			r = ' '
-		}
-		out = append(out, r)
 	}
-	// A final newline ends the last line; it does not start a new one.
-	if len(out) > 0 && out[len(out)-1] == '\n' {
-		out = out[:len(out)-1]
+	if collapse {
+		trim()
+	} else if n := len(t.runes); n > 0 && t.runes[n-1] == '\n' && !t.runs[t.run[n-1]].Break {
+		t.runes, t.run = t.runes[:n-1], t.run[:n-1]
 	}
-	return out
 }
 
-func (t *Text) toUnits(fu int64) geom.Unit {
-	// ceil(fu * size / upem) in 1/64 px.
-	n := int64(t.p.Size)
-	if fu <= 0 {
-		return -geom.Unit(geom.MulDiv(-fu, n, int64(t.face.Upem)))
+// toUnits converts fine units to 1/64 px, rounding up.
+func (t *Text) toUnits(f int64) geom.Unit {
+	if f <= 0 {
+		return -geom.Unit((-f) / t.upem)
 	}
-	return geom.Unit(geom.MulDiv(fu, n, int64(t.face.Upem)) + boolInt(geom.MulDiv(fu, n, int64(t.face.Upem))*int64(t.face.Upem) != fu*n))
+	return geom.Unit((f + t.upem - 1) / t.upem)
 }
 
-// ToUnitsFloor converts font units to 1/64 px rounding down (for glyph
+// toUnitsFloor converts fine units to 1/64 px rounding down (for glyph
 // positions, which are relative and must not drift).
-func (t *Text) ToUnitsFloor(fu int64) geom.Unit {
-	if fu < 0 {
-		return -t.toUnits(-fu)
-	}
-	return geom.Unit(geom.MulDiv(fu, int64(t.p.Size), int64(t.face.Upem)))
+func (t *Text) toUnitsFloor(f int64) geom.Unit {
+	return geom.Unit(floorDiv(f, t.upem))
 }
 
-func boolInt(b bool) int64 {
-	if b {
-		return 1
-	}
-	return 0
-}
+// Ascent and Descent return the rounded ascent and descent of the
+// paragraph's block style (the height of a text fragment is their sum).
+func (t *Text) Ascent() geom.Unit  { return t.strut.ascent }
+func (t *Text) Descent() geom.Unit { return t.strut.descent }
 
-// roundFU returns fu*size/upem rounded to the nearest whole pixel (half
-// up), in Units.
-func (t *Text) roundFU(fu int32) geom.Unit {
-	num := int64(fu) * int64(t.p.Size) // 1/64 px * upem
-	den := int64(t.face.Upem) * geom.UnitsPerPx
-	return geom.Px(int((num + den/2) / den))
-}
-
-func (t *Text) metrics() {
-	f := t.face
-	t.ascent = t.roundFU(f.Ascent)
-	t.descent = t.roundFU(f.Descent)
-	gap := t.roundFU(f.LineGap)
-	switch lh := t.p.LineHeight; lh.Kind {
-	case style.LineHeightNormal:
-		t.lineHeight = t.ascent + t.descent + gap
-	case style.LineHeightNumber:
-		t.lineHeight = geom.Unit(geom.MulDiv(int64(lh.V), int64(t.p.Size), 1000))
-	default:
-		t.lineHeight = geom.Unit(lh.V)
-	}
-	if sp, ok := f.face.NominalGlyph(' '); ok {
-		t.tabStop = 8 * int32(f.face.HorizontalAdvance(sp))
-	}
-}
-
-// Ascent and Descent return the rounded font ascent and descent used to
-// place the baseline (the height of a text fragment is their sum).
-func (t *Text) Ascent() geom.Unit  { return t.ascent }
-func (t *Text) Descent() geom.Unit { return t.descent }
+// RunMetrics returns the rounded ascent and descent of run i.
+func (t *Text) RunMetrics(i int) (ascent, descent geom.Unit) { return t.rs[i].ascent, t.rs[i].descent }
 
 // Runes returns the processed text of [s, e).
 func (t *Text) Runes(s, e int) string { return string(t.runes[s:e]) }
 
-// LineHeight returns the height of one line box.
-func (t *Text) LineHeight() geom.Unit { return t.lineHeight }
+// LineHeight returns the height of the block's strut (one line of its own
+// font).
+func (t *Text) LineHeight() geom.Unit { return t.strut.lineHeight }
 
-// shape shapes each piece of text between forced breaks and tabs.
+// sameFont reports whether runs a and b use the same face and size.
+func (t *Text) sameFont(a, b int32) bool {
+	return t.rs[a].face == t.rs[b].face && t.rs[a].size == t.rs[b].size
+}
+
+// shape shapes each maximal range of one font (face and size) between
+// forced breaks and tabs. Like Chromium, shaping (kerning, ligatures)
+// continues across inline element boundaries when the font is the same.
 func (t *Text) shape() {
-	t.adv = make([]int32, len(t.runes))
+	t.adv = make([]int64, len(t.runes))
 	start := 0
 	for i := 0; i <= len(t.runes); i++ {
-		if i < len(t.runes) && t.runes[i] != '\n' && t.runes[i] != '\t' {
+		if i < len(t.runes) && t.runes[i] != '\n' && t.runes[i] != '\t' && t.sameFont(t.run[i], t.run[start]) {
 			continue
 		}
-		if i > start {
+		if i > start && t.runes[start] != '\n' && t.runes[start] != '\t' {
+			ri := t.run[start]
 			n := len(t.glyphs)
-			t.glyphs = t.face.shape(t.runes[start:i], t.glyphs)
+			t.glyphs = t.rs[ri].face.shape(t.runes[start:i], t.glyphs)
 			for k := n; k < len(t.glyphs); k++ {
 				g := &t.glyphs[k]
 				g.Cluster += start
-				t.adv[g.Cluster] += g.Advance
+				t.adv[g.Cluster] += int64(g.Advance) * int64(t.rs[ri].size)
 			}
+			// A cluster spanning a run boundary (a ligature) keeps its
+			// advance on its first rune; pieces split there regardless.
 		}
-		start = i + 1
+		start = i
+		if i < len(t.runes) && (t.runes[i] == '\n' || t.runes[i] == '\t') {
+			start = i + 1
+		}
+	}
+	if sp, ok := t.strut.face.face.NominalGlyph(' '); ok {
+		t.tabStop = 8 * int64(t.strut.face.face.HorizontalAdvance(sp)) * int64(t.strut.size)
 	}
 }
 
@@ -256,14 +339,14 @@ func (t *Text) segment() {
 		for k := s.end - 1; k >= s.start && t.runes[k] == ' '; k-- {
 			s.spaces++
 		}
-		// Without soft wrapping, only forced breaks end a segment.
 		// Tailoring to match Chromium (ICU): no break after '/' or '!'
 		// directly followed by the next word.
-		if n := len(t.segs); n > 0 && !t.segs[n-1].forced && t.segs[n-1].spaces == 0 &&
+		if n := len(t.segs); n > 0 && !t.segs[n-1].forced && t.segs[n-1].spaces == 0 && t.segs[n-1].end > t.segs[n-1].start &&
 			(t.runes[t.segs[n-1].end-1] == '/' || t.runes[t.segs[n-1].end-1] == '!') {
 			t.segs[n-1].end, t.segs[n-1].spaces, t.segs[n-1].forced = s.end, s.spaces, s.forced
 			continue
 		}
+		// Without soft wrapping, only forced breaks end a segment.
 		if n := len(t.segs); n > 0 && !t.segs[n-1].forced && !wraps(t.p.WhiteSpace) {
 			t.segs[n-1].end, t.segs[n-1].spaces, t.segs[n-1].forced = s.end, s.spaces, s.forced
 			continue
@@ -279,18 +362,18 @@ func (t *Text) segment() {
 }
 
 // width returns the advance of runes [s, e) placed at pen position x
-// (font units, for tab stops).
+// (fine units, for tab stops).
 func (t *Text) width(s, e int, x int64) int64 {
 	w := int64(0)
 	for i := s; i < e; i++ {
 		if t.runes[i] == '\t' {
 			if t.tabStop > 0 {
 				p := x + w
-				w += int64(t.tabStop) - p%int64(t.tabStop)
+				w += t.tabStop - p%t.tabStop
 			}
 			continue
 		}
-		w += int64(t.adv[i])
+		w += t.adv[i]
 	}
 	return w
 }
@@ -306,31 +389,63 @@ func (t *Text) positions() {
 		case '\t':
 			x += t.width(i, i+1, x)
 		default:
-			x += int64(t.adv[i])
+			x += t.adv[i]
 		}
 	}
 	t.pos[len(t.runes)] = x
 }
 
-// lineSpan returns the width of runes [s, e) of one line, starting a
-// line: the exact advance rounded up to 1/64 px.
-func (t *Text) lineSpan(s, e int) geom.Unit {
-	if e <= s {
-		return 0
+func (t *Text) pieces() {
+	n := len(t.runes)
+	t.pstart, t.pend = make([]int, n), make([]int, n)
+	for i := 0; i < n; {
+		j := i + 1
+		if t.runes[i] != '\t' && t.runes[i] != '\n' {
+			for j < n && t.run[j] == t.run[i] && t.runes[j] != '\t' && t.runes[j] != '\n' {
+				j++
+			}
+		}
+		for k := i; k < j; k++ {
+			t.pstart[k], t.pend[k] = i, j
+		}
+		i = j
 	}
-	return t.toUnits(t.pos[e] - t.pos[s])
 }
 
-// span returns the width of runes [s, e) of one hard line as Chromium
-// measures it for min-content contributions: both ends are snapped up to
-// 1/64 px in the coordinates of the hard line, and the width is their
-// difference. A word in the middle of a line can therefore count 1/64 px
-// less than lineSpan of the same word.
-func (t *Text) span(s, e int) geom.Unit {
+// lineSpan returns the width of runes [s, e) of one line, starting a
+// line, as Chromium computes it: the sum over the pieces (inline items)
+// in the range of their exact advance rounded up to 1/64 px.
+func (t *Text) lineSpan(s, e int) geom.Unit {
+	var w geom.Unit
+	for i := s; i < e; {
+		j := min(t.pend[i], e)
+		w += t.toUnits(t.pos[j] - t.pos[i])
+		i = j
+	}
+	return w
+}
+
+// snapped returns the position of rune i in its hard line (which starts
+// at rune line) with every piece before it rounded up, and the part in
+// its own piece rounded up too.
+func (t *Text) snapped(line, i int) geom.Unit {
+	if i >= len(t.runes) {
+		return t.lineSpan(line, i)
+	}
+	ps := max(t.pstart[i], line)
+	return t.lineSpan(line, ps) + t.toUnits(t.pos[i]-t.pos[ps])
+}
+
+// span returns the width of runes [s, e) of the hard line starting at
+// rune line, as Chromium measures it for min-content contributions: both
+// ends are snapped up to 1/64 px in the coordinates of the hard line, and
+// the width is their difference. A word in the middle of a line can
+// therefore count 1/64 px less than lineSpan of the same word.
+func (t *Text) span(line, s, e int) geom.Unit {
 	if e <= s {
 		return 0
 	}
-	return t.toUnits(t.pos[e]) - t.toUnits(t.pos[s])
+	return t.snapped(line, e) - t.snapped(line, s)
 }
 
 // conditional reports whether the trailing spaces of segment i only
@@ -357,7 +472,7 @@ func (t *Text) intrinsic() {
 		if i == 0 || t.segs[i-1].forced {
 			line = s.start
 		}
-		t.minW = geom.Max(t.minW, t.span(s.start, s.end-t.hang(i)))
+		t.minW = geom.Max(t.minW, t.span(line, s.start, s.end-t.hang(i)))
 		t.maxW = geom.Max(t.maxW, t.lineSpan(line, s.end-t.hang(i)))
 	}
 	if !wraps(t.p.WhiteSpace) {
@@ -372,7 +487,7 @@ func (t *Text) MinContent() geom.Unit { return t.minW }
 // forced breaks are taken.
 func (t *Text) MaxContent() geom.Unit { return t.maxW }
 
-// Layout breaks the run into lines for a content box of width w and
+// Layout breaks the paragraph into lines for a content box of width w and
 // returns them. The result is cached for the last width.
 func (t *Text) Layout(w geom.Unit) *Block {
 	if t.last != nil && t.lastW == w {
@@ -404,6 +519,7 @@ func (t *Text) Layout(w geom.Unit) *Block {
 				ln.End, ln.Width = last.end, full
 			}
 		}
+		ln.FullEnd = ln.End
 		if t.p.Ellipsis && ln.Width > w {
 			t.truncate(&ln, w)
 		}
@@ -418,50 +534,59 @@ func (t *Text) Layout(w geom.Unit) *Block {
 		}
 		b.Lines = append(b.Lines, ln)
 	}
-	half := t.halfLeading()
+	var y geom.Unit
 	for k := range b.Lines {
-		b.Lines[k].Top = geom.Unit(k) * t.lineHeight
-		b.Lines[k].Baseline = b.Lines[k].Top + t.ascent + half
+		ln := &b.Lines[k]
+		above, below := t.lineExtent(ln)
+		ln.Top, ln.Height, ln.Baseline = y, above+below, y+above
+		y += ln.Height
 	}
-	b.Height = geom.Unit(len(b.Lines)) * t.lineHeight
+	b.Height = y
 	t.last, t.lastW = b, w
 	return b
 }
 
-// halfLeading is half the difference between the line height and the
-// font's ascent + descent, floored to a whole pixel (as Chromium does), so
-// the baseline of every line is on a whole pixel when the line box is.
-func (t *Text) halfLeading() geom.Unit {
-	l := t.lineHeight - t.ascent - t.descent
-	return geom.Unit(floorDiv(int64(l), 2*geom.UnitsPerPx)) * geom.UnitsPerPx
+// lineExtent returns how far a line box extends above and below its
+// baseline: the maximum over the block's strut and the runs with content
+// on the line (CSS 2.1 §10.8, all inline boxes baseline-aligned).
+func (t *Text) lineExtent(ln *Line) (above, below geom.Unit) {
+	above, below = t.strut.above(), t.strut.below()
+	add := func(r *runInfo) {
+		above, below = geom.Max(above, r.above()), geom.Max(below, r.below())
+		for k := range r.outer {
+			above, below = geom.Max(above, r.outer[k].above()), geom.Max(below, r.outer[k].below())
+		}
+	}
+	seen := -1
+	end := ln.FullEnd
+	if end < len(t.runes) && t.runes[end] == '\n' && t.runs[t.run[end]].Break {
+		end++ // a <br> ending the line is on it
+	}
+	for i := ln.Start; i < end; i++ {
+		if r := int(t.run[i]); r != seen {
+			seen = r
+			add(&t.rs[r])
+		}
+	}
+	return
 }
 
 // Height returns the content height at width w.
 func (t *Text) Height(w geom.Unit) geom.Unit {
 	if !wraps(t.p.WhiteSpace) {
-		return geom.Unit(len(t.hardLines())) * t.lineHeight
+		w = t.maxW // no soft breaks: the width does not matter
 	}
 	return t.Layout(w).Height
-}
-
-func (t *Text) hardLines() []int {
-	var out []int
-	for i, s := range t.segs {
-		if i == 0 || t.segs[i-1].forced {
-			out = append(out, s.start)
-		}
-	}
-	return out
 }
 
 // truncate shortens ln so that its content plus an ellipsis fits in w
 // (CSS Overflow 3 §3.2): whole clusters are removed from the end, and
 // spaces before the ellipsis are kept.
 func (t *Text) truncate(ln *Line, w geom.Unit) {
-	ell := int64(t.face.ellipsisAdvance())
+	ell := t.ellipsisAdvance()
 	end := ln.End
 	for end > ln.Start {
-		if t.toUnits(t.pos[end]-t.pos[ln.Start]+ell) <= w {
+		if t.lineSpan(ln.Start, end)+t.toUnits(ell) <= w {
 			break
 		}
 		end--
@@ -483,6 +608,11 @@ func (t *Text) clusterStart(i int) bool {
 	return false
 }
 
+// ellipsisAdvance is the advance of "…" in the block's style, fine units.
+func (t *Text) ellipsisAdvance() int64 {
+	return int64(t.strut.face.ellipsisAdvance()) * int64(t.strut.size)
+}
+
 // InkWidth returns the width of ln without trailing spaces.
 func (t *Text) InkWidth(ln *Line) geom.Unit {
 	e := ln.End
@@ -493,45 +623,61 @@ func (t *Text) InkWidth(ln *Line) geom.Unit {
 }
 
 // EllipsisWidth returns the advance of the ellipsis glyph.
-func (t *Text) EllipsisWidth() geom.Unit { return t.toUnits(int64(t.face.ellipsisAdvance())) }
+func (t *Text) EllipsisWidth() geom.Unit { return t.toUnits(t.ellipsisAdvance()) }
+
+// X returns the x offset of the pen before rune i on line ln (relative to
+// the content box), for fragments and hit testing.
+func (t *Text) X(ln *Line, i int) geom.Unit {
+	if i >= len(t.runes) || i >= ln.FullEnd {
+		return ln.X + t.lineSpan(ln.Start, i)
+	}
+	ps := max(t.pstart[i], ln.Start)
+	return ln.X + t.lineSpan(ln.Start, ps) + t.toUnitsFloor(t.pos[i]-t.pos[ps])
+}
 
 // PlacedGlyph is a glyph positioned relative to the content box origin
-// (x of the pen, y of the baseline), in Units.
+// (x of the pen, y of the baseline), in Units. Run is the index of its
+// run; Run < 0 is the ellipsis (block style).
 type PlacedGlyph struct {
 	ID   uint16
 	X, Y geom.Unit
+	Run  int
 }
 
 // Glyphs appends the glyphs of line ln (including its ellipsis) with
 // positions relative to the content box.
 func (t *Text) Glyphs(ln *Line, out []PlacedGlyph) []PlacedGlyph {
-	var pen int64
 	gi := 0
 	for gi < len(t.glyphs) && t.glyphs[gi].Cluster < ln.Start {
 		gi++
 	}
 	for i := ln.Start; i < ln.End; i++ {
-		if t.runes[i] == '\t' {
-			pen += t.width(i, i+1, pen)
-			continue
-		}
+		var off int64
+		ps := max(t.pstart[i], ln.Start)
+		px := ln.X + t.lineSpan(ln.Start, ps)
 		for ; gi < len(t.glyphs) && t.glyphs[gi].Cluster == i; gi++ {
 			g := t.glyphs[gi]
+			r := t.run[i]
+			sz := int64(t.rs[r].size)
 			out = append(out, PlacedGlyph{
-				ID: g.ID,
-				X:  ln.X + t.ToUnitsFloor(pen+int64(g.XOff)),
-				Y:  ln.Baseline - t.ToUnitsFloor(int64(g.YOff)),
+				ID:  g.ID,
+				X:   px + t.toUnitsFloor(t.pos[i]-t.pos[ps]+off+int64(g.XOff)*sz),
+				Y:   ln.Baseline - t.toUnitsFloor(int64(g.YOff)*sz),
+				Run: int(r),
 			})
-			pen += int64(g.Advance)
+			off += int64(g.Advance) * sz
 		}
 	}
 	if ln.Ellipsis {
-		if id, ok := t.face.face.NominalGlyph('…'); ok {
-			out = append(out, PlacedGlyph{ID: uint16(id), X: ln.X + t.ToUnitsFloor(pen), Y: ln.Baseline})
+		if id, ok := t.strut.face.face.NominalGlyph('…'); ok {
+			out = append(out, PlacedGlyph{ID: uint16(id), X: ln.X + t.lineSpan(ln.Start, ln.End), Y: ln.Baseline, Run: -1})
 		}
 	}
 	return out
 }
+
+// StrutFace returns the block's face and size (used for the ellipsis).
+func (t *Text) StrutFace() (*Face, geom.Unit) { return t.strut.face, t.strut.size }
 
 func (f *Face) ellipsisAdvance() int32 {
 	if id, ok := f.face.NominalGlyph('…'); ok {
@@ -539,3 +685,50 @@ func (f *Face) ellipsisAdvance() int32 {
 	}
 	return 0
 }
+
+// Metrics returns the rounded ascent and descent of a style's font (the
+// content area of an inline box, CSS 2.1 §10.6.1).
+func Metrics(s Style) (ascent, descent geom.Unit) {
+	r := info(s)
+	return r.ascent, r.descent
+}
+
+// RuneRange returns the runes [s, e) that belong to runs [first, last).
+func (t *Text) RuneRange(first, last int) (s, e int) {
+	s, e = -1, -1
+	for i, r := range t.run {
+		if int(r) >= first && int(r) < last {
+			if s < 0 {
+				s = i
+			}
+			e = i + 1
+		}
+	}
+	if s < 0 {
+		// No characters (e.g. an empty element): the position of the
+		// next rune after the runs before it.
+		p := 0
+		for p < len(t.run) && int(t.run[p]) < first {
+			p++
+		}
+		return p, p
+	}
+	return s, e
+}
+
+// LineInk returns the top and bottom of the content areas of the
+// characters on line ln (relative to the content box).
+func (t *Text) LineInk(ln *Line) (top, bottom geom.Unit) {
+	top, bottom = ln.Baseline-t.strut.ascent, ln.Baseline+t.strut.descent
+	if ln.End > ln.Start {
+		top, bottom = 1<<40, -1<<40
+	}
+	for i := ln.Start; i < ln.End; i++ {
+		r := &t.rs[t.run[i]]
+		top, bottom = min(top, ln.Baseline-r.ascent), max(bottom, ln.Baseline+r.descent)
+	}
+	return
+}
+
+// LineHeightOf returns the line height of one line of a style's font.
+func LineHeightOf(s Style) geom.Unit { return info(s).lineHeight }

@@ -24,6 +24,7 @@ package flexui
 import (
 	"fmt"
 	"image"
+	"io/fs"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -56,6 +57,9 @@ type Options struct {
 	Height int // initial window height in logical pixels
 	// Scale is device pixels per logical pixel. 0 lets the platform decide.
 	Scale float64
+	// Assets resolves <img src> paths (for example an embed.FS). Without
+	// it, only data: URLs load.
+	Assets fs.FS
 }
 
 // Handler is a Go function bound to a handler name used in HTML, such as
@@ -129,6 +133,7 @@ func New(o Options) *App {
 	}
 	a := &App{opts: o, handlers: map[string]Handler{}, w: o.Width, h: o.Height, view: view.New(), missing: map[string]bool{}}
 	a.view.Handler = a.call
+	a.view.SetAssets(o.Assets)
 	a.dirty.Store(true)
 	return a
 }

@@ -147,7 +147,11 @@ func TestCounterClicks(t *testing.T) {
 		if c.Count != 2 {
 			t.Fatalf("count %d after dec", c.Count)
 		}
-		// The incrementally updated frame equals a fresh render.
+		// The incrementally updated frame equals a fresh render (with the
+		// pointer away, so no :hover, and focus cleared).
+		s.Leave()
+		c.app.Focus("")
+		s.Send(platform.Event{Kind: platform.EventNone})
 		fresh := New(Options{Width: 280, Height: 220, Scale: scale})
 		fresh.SetView(c.html(), counterCSS)
 		img, _ := headless.RenderImage(fresh)
@@ -167,7 +171,7 @@ func TestClickSemantics(t *testing.T) {
 	a := New(Options{Width: 200, Height: 100})
 	a.SetView(`
 <div id="outer" onclick="Outer" data-k="o" style="padding: 10px; flex-direction: row; gap: 10px">
-  <div id="a" onclick="Inner" data-k="a" style="width: 40px; height: 40px; background-color: red"><span id="a1" style="width: 10px; height: 10px"></span></div>
+  <div id="a" onclick="Inner" data-k="a" style="width: 40px; height: 40px; background-color: red"><div id="a1" style="width: 10px; height: 10px"></div></div>
   <div id="b" onclick="Stop" style="width: 40px; height: 40px; background-color: blue"></div>
   <div id="c" onclick="Nobody" style="width: 40px; height: 40px"></div>
 </div>`, "")
@@ -219,11 +223,11 @@ func TestFrameCaching(t *testing.T) {
 	}
 	shapes := st.Render.TextShapes
 
-	// Pointer movement with nothing changing: no view call, no parse, no
-	// paint; frames are copied.
+	// Pointer movement over elements no :hover rule can match: no view
+	// call, no parse, no paint; frames are copied.
 	views := c.views
-	s.Move(10, 10)
-	s.Move(20, 20)
+	s.Move(1, 1)
+	s.Move(2, 2)
 	st = c.app.view.Stats()
 	if c.views != views || st.Parses != 1 || st.Render.Paints != 1 || st.Copies < 2 {
 		t.Errorf("idle frames did work: views %d->%d %+v", views, c.views, st)
@@ -231,9 +235,11 @@ func TestFrameCaching(t *testing.T) {
 
 	// A click that changes the count: the view function runs once more,
 	// the document is reparsed once, and only the changed text is shaped.
+	// (Hover, press and focus of the button restyle and repaint: the
+	// default style sheet styles button:hover/:active/:focus.)
 	s.Click(center(t, c.app, "inc"))
 	st = c.app.view.Stats()
-	if st.Parses != 2 || st.Render.Paints != 2 {
+	if st.Parses != 2 {
 		t.Errorf("after click: %+v", st)
 	}
 	if n := st.Render.TextShapes - shapes; n != 1 { // only the "1"
@@ -244,12 +250,13 @@ func TestFrameCaching(t *testing.T) {
 	}
 
 	// A handler that does not change the HTML: the view function runs,
-	// but nothing is reparsed or repainted.
+	// but nothing is reparsed and no text is reshaped. Pressing an already
+	// hovered and focused button repaints only for :active (on and off).
 	c.app.Handle("Inc", func(*Ctx) {})
 	s.Click(center(t, c.app, "inc"))
 	st2 := c.app.view.Stats()
-	if st2.Parses != st.Parses || st2.Render.Paints != st.Render.Paints {
-		t.Errorf("unchanged view did work: %+v", st2)
+	if st2.Parses != st.Parses || st2.Render.TextShapes != st.Render.TextShapes || st2.Render.Paints != st.Render.Paints+2 {
+		t.Errorf("unchanged view did work: %+v (before %+v)", st2, st)
 	}
 
 	// Resize: layout and paint again, no restyle.

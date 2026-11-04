@@ -250,3 +250,5 @@ func TestScrollChaining(t *testing.T) {
 		t.Errorf("chained scroll: inner %v outer %v", iy, oy)
 	}
 }
+
+func templateMust(src string) *template.Template { return template.Must(template.New("v").Parse(src)) }

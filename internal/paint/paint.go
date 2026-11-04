@@ -10,7 +10,11 @@
 // on Raster and in spec/SUBSET.md §6.
 package paint
 
-import "github.com/sivaneshwararaj/flexui/internal/geom"
+import (
+	"image"
+
+	"github.com/sivaneshwararaj/flexui/internal/geom"
+)
 
 // Color is a non-premultiplied sRGB color with alpha.
 type Color struct{ R, G, B, A uint8 }
@@ -76,6 +80,9 @@ type Canvas interface {
 	// Glyphs draws a run of glyphs. The run must not be modified while
 	// a recording holds it.
 	Glyphs(run *GlyphRun)
+	// DrawImage draws img (premultiplied RGBA) scaled to fill dst. img
+	// must not be modified while a recording holds it.
+	DrawImage(img *image.RGBA, dst geom.Rect)
 }
 
 // OpKind identifies a recorded command.
@@ -90,6 +97,7 @@ const (
 	OpPushOpacity
 	OpPopOpacity
 	OpGlyphs
+	OpImage
 )
 
 // Op is one recorded command. Only the fields relevant to Kind are set.
@@ -101,6 +109,7 @@ type Op struct {
 	Color  Color
 	Alpha  uint8
 	Run    *GlyphRun
+	Image  *image.RGBA
 }
 
 // List is a display list: it records Canvas commands so they can be
@@ -133,6 +142,8 @@ func (l *List) Replay(c Canvas) {
 			c.PopOpacity()
 		case OpGlyphs:
 			c.Glyphs(op.Run)
+		case OpImage:
+			c.DrawImage(op.Image, op.RRect.Rect)
 		}
 	}
 }
@@ -157,3 +168,6 @@ var (
 )
 
 func (l *List) Glyphs(run *GlyphRun) { l.Ops = append(l.Ops, Op{Kind: OpGlyphs, Run: run}) }
+func (l *List) DrawImage(img *image.RGBA, dst geom.Rect) {
+	l.Ops = append(l.Ops, Op{Kind: OpImage, Image: img, RRect: RRect{Rect: dst}})
+}

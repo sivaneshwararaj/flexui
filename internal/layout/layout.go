@@ -53,6 +53,13 @@ type Measurer interface {
 	Height(w geom.Unit) geom.Unit
 }
 
+// AspectRatio is implemented by measurers of replaced content with a
+// natural aspect ratio (images): when the height is known and the width
+// is not, the width follows from the height.
+type AspectRatio interface {
+	Width(h geom.Unit) geom.Unit
+}
+
 // Box is the layout result for one node.
 type Box struct {
 	// X, Y: border-box position relative to the parent's border-box origin
@@ -212,6 +219,10 @@ func (n *Node) leaf(in input) geom.Size {
 	b := resolveBox(n.Style, in.parent)
 	sz, _ := ownSizes(&b, in)
 	if (!sz[0].OK || !sz[1].OK) && n.Measure != nil {
+		if ar, ok := n.Measure.(AspectRatio); ok && !sz[0].OK && sz[1].OK {
+			// Width from a known height through the aspect ratio.
+			sz[0] = some(b.clampIf(0, ar.Width(geom.Max(0, sz[1].V-b.pb[1]))+b.pb[0], in))
+		}
 		if !sz[0].OK {
 			// Width: fit-content within the available space.
 			minc, maxc := n.Measure.Widths()

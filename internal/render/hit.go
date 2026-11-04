@@ -30,7 +30,20 @@ func (h *hitter) box(b *Box) {
 	}
 }
 
-func (h *hitter) text(b *Box) {} // text belongs to its parent, which is already a candidate
+// text: text belongs to its parent element (already a candidate), or to
+// the deepest inline element whose fragment contains the point.
+func (h *hitter) text(b *Box) {
+	if h.out > 0 || !contains(b.Abs, h.x, h.y) {
+		return
+	}
+	for _, ib := range b.inlines { // tree order: deeper boxes come later
+		for _, f := range ib.Frags {
+			if h.x >= f.X && h.x < f.X+f.W && h.y >= f.Y && h.y < f.Y+f.H {
+				h.hit = ib
+			}
+		}
+	}
+}
 
 func (h *hitter) pushClip(b *Box) {
 	r := b.clipRRect().Rect
@@ -48,6 +61,7 @@ func (h *hitter) popClip() {
 	h.clipped = h.clipped[:len(h.clipped)-1]
 }
 
+func (h *hitter) scrollbars(*Box)  {}
 func (h *hitter) pushOpacity(*Box) {}
 func (h *hitter) popOpacity()      {}
 

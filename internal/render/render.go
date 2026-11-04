@@ -24,8 +24,24 @@ type Box struct {
 	Style style.Style
 	Lay   *layout.Node
 	Kids  []*Box
-	Abs   geom.Rect  // border box in document coordinates, after layout
-	Text  *text.Text // set for anonymous text boxes
+	Abs   geom.Rect   // border box in document coordinates, after layout
+	Text  *text.Text  // set for anonymous text boxes
+	Image *image.RGBA // set for loaded <img> elements (premultiplied)
+	// Scroll is the scroll offset of a scroll container (set by Place).
+	Scroll geom.Point
+
+	// Anonymous text boxes: the style owner of each text run (an inline
+	// element's box, or nil for text directly in the parent element), and
+	// the inline element boxes in tree order.
+	runOwner []*Box
+	inlines  []*Box
+	// Inline element boxes (Inline set, no layout node): the run range
+	// [first, last) they cover, and their fragments (one rectangle per
+	// line, document coordinates) after placement.
+	Inline      bool
+	first, last int
+	Frags       []geom.Rect
+	anon        *Box
 }
 
 // textMeasure adapts a text run to layout.Measurer.
@@ -34,39 +50,24 @@ type textMeasure struct{ t *text.Text }
 func (m textMeasure) Widths() (geom.Unit, geom.Unit) { return m.t.MinContent(), m.t.MaxContent() }
 func (m textMeasure) Height(w geom.Unit) geom.Unit   { return m.t.Height(w) }
 
-// newText makes the anonymous box for a run of text in parent (spec
-// SUBSET.md §7.1). It inherits the inherited properties; all others are
-// initial, except that it takes `overflow` and `text-overflow` from a
-// parent whose text-overflow is ellipsis and whose overflow clips.
-func (c *Cache) newText(raw string, parent *style.Style) *Box {
-	st := style.Inherit(parent)
-	if parent.TextOverflow == style.TextOverflowEllipsis && parent.Overflow != style.OverflowVisible {
-		st.Overflow, st.TextOverflow = parent.Overflow, parent.TextOverflow
-	}
-	st.Finish()
-	t := c.text(raw, text.Params{
-		Weight: int(st.FontWeight), Size: st.FontSize, LineHeight: st.LineHeight,
-		WhiteSpace: st.WhiteSpace, Align: st.TextAlign,
-		Ellipsis: st.TextOverflow == style.TextOverflowEllipsis,
-	})
-	if t.Empty() {
-		return nil
-	}
-	b := &Box{Style: st, Text: t}
-	b.Lay = &layout.Node{Style: &b.Style, Measure: textMeasure{t}}
-	return b
-}
-
 // Document is a styled tree ready for layout and painting.
 type Document struct {
 	Dom      *dom.Document
 	Root     *Box
 	Warnings []string
 	// Pseudo is the set of pseudo-classes the document's rules use.
-	Pseudo style.State
-	seen   map[string]bool
-	cache  *Cache
-	boxes  map[*dom.Node]*Box
+	Pseudo  style.State
+	seen    map[string]bool
+	cache   *Cache
+	boxes   map[*dom.Node]*Box
+	styles  map[*dom.Node]*style.Style // computed styles of this build
+	cascade *style.Cascade
+}
+
+// Affects reports whether changing pseudo-class flag on element n can
+// change any style (style.Cascade.Affects).
+func (d *Document) Affects(n *dom.Node, flag style.State) bool {
+	return d.Pseudo&flag != 0 && d.cascade.Affects(n, flag)
 }
 
 // BoxOf returns the box of element n, or nil.
@@ -104,12 +105,12 @@ func Build(html, css string) *Document {
 func (c *Cache) Style(p *Parsed, css string) *Document {
 	c.Stats.Styles++
 	c.gen++
-	d := &Document{Dom: p.Dom, seen: map[string]bool{}, cache: c, boxes: map[*dom.Node]*Box{}}
+	d := &Document{Dom: p.Dom, seen: map[string]bool{}, cache: c, boxes: map[*dom.Node]*Box{}, styles: map[*dom.Node]*style.Style{}}
 	for _, w := range p.Warnings {
 		d.warn("%s", w)
 	}
-	var sheets []*style.Sheet
-	order := 0
+	sheets := []*style.Sheet{uaSheet()}
+	order := len(sheets[0].Rules) + 1
 	for _, src := range append([]string{css}, p.Dom.Styles...) {
 		sh, ws := c.sheet(src, order)
 		order += len(sh.Rules) + 1
@@ -120,41 +121,72 @@ func (c *Cache) Style(p *Parsed, css string) *Document {
 	}
 	cas := style.NewCascade(sheets...)
 	d.Pseudo = cas.Pseudo()
-	d.Root = d.build(cas, p.Dom.Root, nil)
+	d.cascade = cas
+	d.Root = d.build(cas, p.Dom.Root, d.computed(cas, p.Dom.Root, nil))
+	d.styles = nil
 	c.sweep()
 	return d
 }
 
-func (d *Document) build(c *style.Cascade, el *dom.Node, parent *style.Style) *Box {
+// computed returns the computed style of el (memoized for this build).
+func (d *Document) computed(c *style.Cascade, el *dom.Node, parent *style.Style) *style.Style {
+	if st, ok := d.styles[el]; ok {
+		return st
+	}
 	st, ws := c.Compute(el, parent, el.Attr("style"))
 	for _, w := range ws {
 		d.warn("style attribute: %s", w.Error())
 	}
-	b := &Box{El: el, Style: st}
+	d.styles[el] = &st
+	return &st
+}
+
+// build makes the box of el as a flex container (and a flex item of its
+// parent). Maximal runs of text and inline elements among its children
+// become anonymous inline boxes (§7.1).
+func (d *Document) build(c *style.Cascade, el *dom.Node, st *style.Style) *Box {
+	b := &Box{El: el, Style: *st}
+	if b.Style.Display == style.DisplayInline {
+		b.Style.Display = style.DisplayFlex // blockified: contains a block
+	}
 	b.Lay = &layout.Node{Style: &b.Style}
 	d.boxes[el] = b
-	if el.Tag() == "img" {
-		d.warn("<img> is not rendered yet: it is an empty box")
+	switch el.Tag() {
+	case "img":
+		d.image(b)
+	case "input":
+		d.input(b)
 	}
-	kids := el.Children
-	for i := 0; i < len(kids); i++ {
-		var kb *Box
-		if kids[i].Kind == dom.TextNode {
-			// Adjacent text nodes form one anonymous run.
-			raw := kids[i].Text
-			for i+1 < len(kids) && kids[i+1].Kind == dom.TextNode {
-				i++
-				raw += kids[i].Text
-			}
-			if kb = d.cache.newText(raw, &b.Style); kb == nil {
-				continue
-			}
-		} else {
-			kb = d.build(c, kids[i], &b.Style)
-		}
+	add := func(kb *Box) {
 		b.Kids = append(b.Kids, kb)
 		b.Lay.Children = append(b.Lay.Children, kb.Lay)
 	}
+	var group []*dom.Node
+	flush := func() {
+		if len(group) == 0 {
+			return
+		}
+		if kb := d.inlineBox(c, group, &b.Style); kb != nil {
+			add(kb)
+		} else {
+			// No text at all: inline elements stay flex items.
+			for _, k := range group {
+				if k.Kind == dom.ElementNode {
+					add(d.build(c, k, d.computed(c, k, &b.Style)))
+				}
+			}
+		}
+		group = group[:0]
+	}
+	for _, k := range el.Children {
+		if k.Kind == dom.TextNode || d.isInline(c, k, &b.Style) {
+			group = append(group, k)
+			continue
+		}
+		flush()
+		add(d.build(c, k, d.computed(c, k, &b.Style)))
+	}
+	flush()
 	return b
 }
 
@@ -177,12 +209,17 @@ func (d *Document) Place(scroll func(*Box) geom.Point) {
 		bx := b.Lay.Box
 		b.Abs = geom.Rect{X: ox + bx.X, Y: oy + bx.Y, W: bx.W, H: bx.H}
 		cx, cy := b.Abs.X, b.Abs.Y
-		if scroll != nil && b.El != nil {
+		b.Scroll = geom.Point{}
+		if scroll != nil && b.El != nil && !b.Inline {
 			o := scroll(b)
+			b.Scroll = o
 			cx, cy = cx-o.X, cy-o.Y
 		}
 		for _, k := range b.Kids {
 			place(k, cx, cy)
+		}
+		if b.Text != nil {
+			b.placeInline()
 		}
 	}
 	place(d.Root, 0, 0)
@@ -301,6 +338,7 @@ type visitor interface {
 	popClip()
 	pushOpacity(b *Box)
 	popOpacity()
+	scrollbars(b *Box) // a scroll container's scrollbars, over its content
 }
 
 // Paint emits the document in paint order (spec/SUBSET.md §6.4).
@@ -342,6 +380,7 @@ func (b *Box) context(v visitor) {
 	}
 	b.walk(v)
 	if b.clips() {
+		v.scrollbars(b)
 		v.popClip()
 	}
 	for _, d := range pos {
@@ -402,6 +441,7 @@ func (b *Box) walk(v visitor) {
 		}
 		k.walk(v)
 		if k.clips() {
+			v.scrollbars(k)
 			v.popClip()
 		}
 	}
@@ -423,6 +463,9 @@ type painter struct{ c paint.Canvas }
 func (p painter) box(b *Box) {
 	if b.El != nil {
 		b.paintBox(p.c)
+		if b.Image != nil {
+			b.paintImage(p.c)
+		}
 	}
 }
 func (p painter) text(b *Box)        { b.paintText(p.c) }
@@ -430,27 +473,8 @@ func (p painter) pushClip(b *Box)    { p.c.PushClip(b.clipRRect()) }
 func (p painter) popClip()           { p.c.PopClip() }
 func (p painter) pushOpacity(b *Box) { p.c.PushOpacity(uint8((b.Style.Opacity*255 + 500) / 1000)) }
 func (p painter) popOpacity()        { p.c.PopOpacity() }
-
-// paintText draws an anonymous text box's lines.
-func (b *Box) paintText(c paint.Canvas) {
-	t := b.Text
-	if b.Style.Color.A == 0 {
-		return
-	}
-	if b.clips() {
-		c.PushClip(paint.Rect(b.Abs))
-	}
-	blk := t.Layout(b.Abs.W)
-	run := &paint.GlyphRun{Font: t.Face(), Size: t.Params().Size, Color: color(b.Style.Color)}
-	var gs []text.PlacedGlyph
-	for i := range blk.Lines {
-		gs = t.Glyphs(&blk.Lines[i], gs[:0])
-		for _, g := range gs {
-			run.Glyphs = append(run.Glyphs, paint.Glyph{ID: g.ID, X: b.Abs.X + g.X, Y: b.Abs.Y + g.Y})
-		}
-	}
-	c.Glyphs(run)
-	if b.clips() {
-		c.PopClip()
+func (p painter) scrollbars(b *Box) {
+	for _, t := range b.Thumbs() {
+		p.c.FillRRect(paint.Uniform(t.Rect, geom.Px(3)), scrollbarColor)
 	}
 }

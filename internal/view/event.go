@@ -39,6 +39,29 @@ func (v *View) dispatch(ev *Event) bool {
 	return ran
 }
 
+// dispatchSelf calls the handler of ev's target only (focus, blur).
+func (v *View) dispatchSelf(ev *Event) bool {
+	name := ev.Target.Attr("on" + ev.Type)
+	if name == "" || v.Handler == nil {
+		return false
+	}
+	ev.Current, ev.Name = ev.Target, name
+	v.Handler(ev)
+	return true
+}
+
+// disabledPath reports whether n or an ancestor is a disabled control:
+// such elements receive no clicks, and neither do their ancestors through
+// them (as in browsers).
+func disabledPath(n *dom.Node) bool {
+	for ; n != nil; n = n.Parent {
+		if n.Disabled() {
+			return true
+		}
+	}
+	return false
+}
+
 // dragSlop is how far (logical px) the pointer must move while pressed
 // before a press over a scroll container becomes a drag scroll.
 const dragSlop = 4 * geom.UnitsPerPx
@@ -50,7 +73,9 @@ func (v *View) PointerMove(x, y geom.Unit) {
 	if v.Document() == nil {
 		return
 	}
-	if v.pressed {
+	if v.pressed && v.thumb != nil {
+		v.dragThumb(x, y)
+	} else if v.pressed {
 		if v.dragging == nil && (abs(x-v.downAt.X) > dragSlop || abs(y-v.downAt.Y) > dragSlop) {
 			if sc := v.scrollerFor(v.down); sc != nil {
 				v.dragging, v.dragLast = sc, v.downAt
@@ -74,7 +99,15 @@ func (v *View) PointerDown(x, y geom.Unit) {
 	v.downAt = geom.Point{X: x, Y: y}
 	v.pressed = true
 	v.dragging = nil
-	v.setActive(v.down)
+	v.thumb = v.thumbAt(v.down, x, y)
+	if v.thumb != nil {
+		return // dragging a scrollbar thumb: no :active, focus or click
+	}
+	if disabledPath(v.down) {
+		v.setActive(nil)
+	} else {
+		v.setActive(v.down)
+	}
 	// Focus the nearest focusable element; pressing elsewhere blurs.
 	var f *dom.Node
 	for n := v.down; n != nil; n = n.Parent {
@@ -96,6 +129,10 @@ func (v *View) PointerUp(x, y geom.Unit) bool {
 	}
 	v.pressed = false
 	v.setActive(nil)
+	if v.thumb != nil {
+		v.thumb, v.down = nil, nil
+		return false
+	}
 	if v.dragging != nil {
 		v.dragging, v.down = nil, nil
 		return false
@@ -103,7 +140,7 @@ func (v *View) PointerUp(x, y geom.Unit) bool {
 	up := v.hit(x, y)
 	t := commonAncestor(v.down, up)
 	v.down = nil
-	if t == nil {
+	if t == nil || disabledPath(t) {
 		return false
 	}
 	return v.dispatch(&Event{Type: "click", Target: t, X: x, Y: y})

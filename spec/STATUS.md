@@ -1,6 +1,6 @@
 # Status
 
-Last updated after M6. Next step: M7 (portability gate and macOS window).
+Last updated after M5b. Next steps: M8a (input editing), M7 (macOS window), M9 (demo).
 
 | Milestone | State |
 |---|---|
@@ -11,6 +11,7 @@ Last updated after M6. Next step: M7 (portability gate and macOS window).
 | M4 Text | done |
 | M5 Handlers and state | done |
 | M6 Interaction | done |
+| M5b Inline formatting, images, default styles, disabled, focus events, scrollbars | done |
 | M7 Portability gate + macOS | portability script exists and passes; darwin not started |
 | M8 Text input | not started |
 | M9 Demo app | not started |
@@ -63,6 +64,22 @@ Last updated after M6. Next step: M7 (portability gate and macOS window).
   0.5 px (kerning at a line end, D23).
   * Works around a go-text v0.3.5 bug that skipped most class kerning
     (`internal/text/coverage.go`, guarded by `TestKerning`).
+* Inline formatting (M5b): `span`, `a`, `strong`/`b`, `em`/`i`
+  (upright), `br`; runs with their own size, weight, line height, color
+  and background; line boxes with mixed metrics (CSS 2.1 §10.8); links
+  hit-tested, hovered and focused by fragment. Text layout compared with
+  Chromium exactly on 16 hand-written documents (incl. 4 inline), 300
+  random block documents and 150 random inline documents: 4234 boxes and
+  4556 lines; known differences: 33 at most 2/64 px (D14), 6 from shaping
+  at a soft line end (D23), one of which moves a line break.
+* `<img>` (M5b): PNG/JPEG from `data:` URLs or `Options.Assets`, aspect
+  ratio sizing, integer bilinear scaling, rounded clipping. Layout matches
+  Chromium; pixels differ by JPEG decoding/filtering (D29) and Chromium
+  not clipping images to `border-radius` (D28).
+* Default style sheet (`internal/render/ua.css`, D27) for links,
+  buttons and inputs, with `:hover/:active/:focus/:disabled`; `disabled`
+  buttons and inputs; `onfocus`/`onblur`; overlay scrollbars with
+  draggable thumbs.
 * Handlers and state (M5): `onclick="Name"` bound with `App.Handle`,
   bubbling with `Ctx.StopPropagation`, `Ctx.Attr`, click = press+release
   on the common ancestor, `SetViewFunc` re-run after handlers or
@@ -88,7 +105,7 @@ Last updated after M6. Next step: M7 (portability gate and macOS window).
   layers, `overflow` clips carried to out-of-order contexts) → raster,
   on a white canvas.
 * Tests:
-  * 22 RenderHTML goldens (17 documents, 4 also at 2x) in
+  * 25 RenderHTML goldens (20 documents, 4 also at 2x) in
     `testdata/render/golden`. They include three z-index documents with
     overlapping absolute boxes (negative, nested and clipped contexts).
   * 8 rasterizer goldens.
@@ -117,6 +134,9 @@ Last updated after M6. Next step: M7 (portability gate and macOS window).
   | text_card@2x | 203 | 0.599 | 1.530% | 0.696% | accepted (D22, D21) |
   | text_ellipsis | 48 | 0.394 | 1.682% | 0.105% | accepted (D21, D18) |
   | text_paragraphs | 47 | 0.505 | 2.179% | 0.081% | accepted (D21) |
+  | controls | 67 | 0.160 | 0.831% | 0.044% | accepted (D18, D21) |
+  | images | 184 | 0.334 | 0.232% | 0.199% | accepted (D28, D29) |
+  | inline_text | 52 | 0.535 | 2.551% | 0.145% | accepted (D21) |
   | zindex_clip | 26 | 0.014 | 0.065% | 0% | ok |
   | zindex_clip@2x | 50 | 0.013 | 0.066% | 0.004% | accepted (D18) |
   | zindex_nested | 1 | 0.022 | 0% | 0% | ok |
@@ -136,14 +156,17 @@ Last updated after M6. Next step: M7 (portability gate and macOS window).
 ## Stubbed
 
 * Text: Latin left-to-right only (no bidi or complex scripts), one
-  bundled family, no italics, no `letter-spacing`/`word-spacing`, no
-  hyphenation, no inline formatting across elements (§7.1).
-* `<img>`: an empty box with a warning; no image loading yet.
-* `<input>`, `<button>`, `<a>`: plain boxes (interaction in M5/M6/M8).
-* Handlers: only `onclick` and `onkeydown`; no `oninput`/`onchange`
-  (M8), no `onfocus`/`onblur`, no `disabled`.
-* Scrolling: no scrollbars (D25), no keyboard scrolling, no inertia; no
-  scrolling of `body` itself unless it has `overflow: scroll`.
+  bundled family, no italics (D30), no `letter-spacing`/`word-spacing`,
+  no hyphenation, no `vertical-align`; inline elements cannot have
+  padding, borders or margins (warning).
+* `<img>`: no `object-fit`, no mipmaps (strong downscaling aliases), no
+  animated images, no other formats.
+* `<input>`: a styled one-line box; editing comes with M8.
+* Handlers: `onclick`, `onkeydown`, `onfocus`, `onblur`; `oninput` and
+  `onchange` come with M8.
+* Scrolling: overlay scrollbars only (D25), no keyboard scrolling, no
+  track clicks, no inertia; no scrolling of `body` itself unless it has
+  `overflow: scroll`.
 
 ## Known limitations / bugs
 

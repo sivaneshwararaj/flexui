@@ -8,7 +8,7 @@ import (
 )
 
 func params(ws style.WhiteSpace) Params {
-	return Params{Weight: 400, Size: geom.Px(16), WhiteSpace: ws}
+	return Params{Style: Style{Weight: 400, Size: geom.Px(16)}, WhiteSpace: ws}
 }
 
 // TestKerning guards the coverage workaround in coverage.go: class-based

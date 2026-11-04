@@ -21,6 +21,7 @@ echo "wrote testdata/render/chrome ($(ls testdata/render/chrome | wc -l) screens
 
 # Text layout: hand-written documents and the seeded random ones.
 node scripts/textcheck.cjs testdata/text/docs >testdata/text/chrome.json
-go test ./internal/render -run '^TestEmitText$' -count=1 -args -emit-text="$tmp/text" >/dev/null
+go test ./internal/render -run '^TestEmitText$' -count=1 -args -emit-text="$tmp/text" -emit-inline="$tmp/inline" >/dev/null
 node scripts/textcheck.cjs "$tmp/text" >testdata/text/random.json
-echo "wrote testdata/text/chrome.json and random.json"
+node scripts/textcheck.cjs "$tmp/inline" >testdata/text/inline.json
+echo "wrote testdata/text/chrome.json, random.json and inline.json"
