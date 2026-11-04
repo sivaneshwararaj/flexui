@@ -37,11 +37,32 @@ enforces this.
 * `flex.go`: CSS Flexbox §9 algorithm for one container. One function serves
   both sizing (intrinsic measurement) and final layout (`perform`).
 * `absolute.go`: absolutely positioned children.
-* `compute(node, input)` takes the node's *known* border-box sizes (imposed
-  by the parent), the containing-block size for percentages, the available
-  space per axis (`Definite(v)` / `MinContent` / `MaxContent`), and whether
-  to perform final layout. It returns the border-box size. This mirrors
-  Taffy's design but is written from the spec.
+* `compute(node, input)` returns the border-box size. Its inputs:
+  * `known`: border-box sizes imposed by the parent.
+  * `definite`: whether each known size counts as definite for
+    descendants' percentages (§9.8).
+  * `ignoreSize`: treat the node's own width/height as auto, to measure its
+    content size (automatic minimum size, `flex-basis: content`). Min/max
+    are not applied on that axis.
+  * `parent`: the containing-block size for percentages (only definite
+    sizes are passed).
+  * `avail`: the available space per axis (`Definite(v)` / `MinContent` /
+    `MaxContent`).
+  * `wantW`: the caller needs only the width, so height work is skipped.
+  * `perform`: do the final layout of descendants.
+
+  The overall shape resembles Taffy, but it is written from the spec.
+* Keeping intrinsic sizing cheap matters: without it, nested auto-sized
+  containers are exponential. Three things keep it linear-ish:
+  1. **Width-only calls** (`wantW`): a column container's width is the
+     widest item (`columnWidth`), a row's width only needs item widths.
+  2. **Canonical cache keys** (`Node.canonical`): available height never
+     affects results, and width-only calls drop all height inputs.
+     Exception: column-wrap containers.
+  3. A 12-entry per-node cache of non-perform results, reset per pass.
+  `TestDeepNestingCost` guards this.
+* Column containers resolve their width before their height. Leaves use
+  fit-content width, then measure the height at that width.
 * All math is integer `geom.Unit`. Divisions that split space use
   cumulative `MulDiv` so parts sum exactly.
 

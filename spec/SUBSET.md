@@ -89,16 +89,23 @@ declaration still applies).
   `max-*`: as `none`; for gaps, margins and padding: as `0`).
 * For absolutely positioned elements the containing block is the parent's
   **padding box**.
-* A size given to a flex item by the flex algorithm (flexed main size,
-  stretched cross size) counts as definite for its children's percentages
-  (CSS Flexbox §9.8).
+* A size given to a flex item by the flex algorithm counts as definite for
+  its children's percentages only as CSS Flexbox §9.8 says. The flexed main
+  size is definite if the container's main size is definite. A stretched
+  cross size is definite if the container's cross size is definite. A
+  container whose size comes from its content is never definite, even
+  after layout. So `height: 50%` inside an auto-height column stays
+  `auto`.
 
 ### 2.3 Flex algorithm
 
 We follow CSS Flexible Box Layout Level 1 §9, including:
 
 * Flex base size and hypothetical main size (§9.2), with `flex-basis: auto`
-  falling back to `width`/`height` and then to the max-content size.
+  falling back to `width`/`height` and then to the max-content size. A
+  percentage `flex-basis` against an indefinite container size behaves as
+  `content` (the content size, ignoring `width`/`height`). The flex base
+  size ignores min/max; they apply to the hypothetical main size.
 * Automatic minimum size (`min-width/height: auto`) of flex items in the main
   axis = min(specified size, min-content size), clamped by the max size. It is
   `0` for items with `overflow` other than `visible`. In the cross axis it is
@@ -106,18 +113,27 @@ We follow CSS Flexible Box Layout Level 1 §9, including:
 * Line breaking for `wrap` / `wrap-reverse`.
 * Resolving flexible lengths with the freeze loop, including the
   sum-of-factors-below-1 rule and scaled shrink factors.
-* Cross sizes, `stretch`, `align-content`, auto margins on both axes,
-  `justify-content` fallbacks (`space-between` → `flex-start`;
-  `space-around`/`space-evenly` → `center` when free space is negative or
-  there is one item).
+* Cross sizes, `stretch`, `align-content`, auto margins on both axes.
+* Distribution fallbacks when free space is negative (overflow), for both
+  `justify-content` and `align-content`: `space-between`, `space-around`
+  and `space-evenly` all behave as `flex-start`. This is the CSS Box
+  Alignment "safe" fallback and matches Chromium. (Flexbox Level 1 said
+  `center` for space-around.) `center` and `flex-end` do overflow on the
+  start side. With a single item and positive free space, `space-between`
+  is `flex-start` and `space-around`/`space-evenly` center it.
 * Intrinsic sizes of flex containers (needed when a container is sized by
   its content):
   * max-content main size = sum of the items' hypothetical outer main
     sizes plus gaps (longest line for wrapping containers).
   * min-content main size = sum of the items' min-content contributions
     (largest contribution for wrapping containers).
-  * A row container whose width is auto and is not stretched gets the
-    fit-content width: `max(min-content, min(max-content, available))`.
+  * A box whose width is auto and is not stretched gets the fit-content
+    width: `max(min-content, min(max-content, available))`, then clamped by
+    `min-width`/`max-width`. Its content is then laid out at that width:
+    text wraps at the clamped width, but the box keeps the clamped width
+    even if the wrapped lines are narrower.
+  * A column container's width is resolved before its height (heights
+    depend on widths).
   * A column container's auto height is always its content height. It does
     not shrink to the available height, as in CSS block-axis sizing.
 
@@ -192,7 +208,8 @@ Inheritance: only text properties (`color`, `font-*`, `line-height`,
 | D6 | No baseline alignment. | Not in the subset. |
 | D7 | Cascade by source order + pseudo-class layer, not specificity. | Requested simplicity, documented in §3. |
 | D8 | `overflow` is one value for both axes. | Simplicity. |
-| D9 | Percentages of indefinite sizes behave as `auto`, including during intrinsic sizing (browsers sometimes resolve them against the final size after a second pass). | Single-pass simplicity. |
+| D9 | Intrinsic (content-based) sizing assumes widths never depend on heights. Exception: a column-wrap container that is itself being measured. When a column-wrap container sits inside a subtree sized by its content width, percentages against ancestor heights are treated as indefinite during that measurement. | Keeps intrinsic sizing linear instead of exponential in tree depth. Only affects column-wrap inside content-sized boxes. |
+| D10 | `MeasureFunc` leaves (text, images) are sized as fit-content: width `max(min-content, min(max-content, available))`, then height at that width. | Same as CSS for text; images get their intrinsic size. |
 
 ## 5. Verification
 
