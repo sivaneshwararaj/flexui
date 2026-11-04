@@ -1,6 +1,6 @@
 # Status
 
-Last updated after M9. Next steps: run the macOS stages on a Mac (M7 verification), IME composition (rest of M8).
+Last updated after the first macOS run (stages 1-5, 7 pass). Next steps: stage 6 results, IME composition (rest of M8).
 
 | Milestone | State |
 |---|---|
@@ -12,7 +12,7 @@ Last updated after M9. Next steps: run the macOS stages on a Mac (M7 verificatio
 | M5 Handlers and state | done |
 | M6 Interaction | done |
 | M5b Inline formatting, images, default styles, disabled, focus events, scrollbars | done |
-| M7 Portability gate + macOS | gate done; macOS window written and compile-checked only, **never run** (see platform/darwin/README.md) |
+| M7 Portability gate + macOS | gate done; macOS stages 1-5 and 7 passed on an Apple-silicon Mac (macOS 27.2); stage 6 (text input, clipboard), resizing and Intel Macs unverified |
 | M8 Text input | M8a done (editing model, headless); IME composition with the macOS step |
 | M9 Demo app | done headless (`examples/demo`); the window is untested |
 
@@ -172,8 +172,10 @@ Last updated after M9. Next steps: run the macOS stages on a Mac (M7 verificatio
   presentation at the backing scale, resize, mouse/wheel/keys, typed
   text, system clipboard, `darwin.Run(app)`; seven staged commands with
   `EXPECT`/`RESULT` lines and `-debug` logs; `examples/counter -window`.
-  **It compiles for darwin/arm64 and darwin/amd64 but has never been run;
-  nothing about it is verified.** Untested parts are listed in
+  Verified by the user on an Apple-silicon MacBook Air (macOS 27.2,
+  scale 2): stages 1-5 and 7 pass, including a byte-identical
+  presented frame (stage 3). Not yet verified: stage 6 (text input,
+  clipboard), live resizing and scale changes, Intel Macs. Details in
   `platform/darwin/README.md`.
 
 ## Stubbed
