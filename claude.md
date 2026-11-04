@@ -45,14 +45,14 @@ Anything else: ask before adding. Do not add Gio, Fyne, Ebitengine (as a UI laye
 ## Architecture
 
 ```
-/spec            subset specification (source of truth, see below)
-/dom             node tree, HTML -> tree
-/style           CSS parsing, selector matching, computed styles
-/layout          flexbox engine; input: styled tree + viewport, output: rects
-/paint           display list + software rasterizer -> *image.RGBA
-/text            font loading, shaping, line breaking, measurement
-/app             handlers, state, re-render loop, event routing
-/platform        interface + implementations
+/spec                  subset specification (source of truth, see below)
+/internal/dom          node tree, HTML -> tree
+/internal/style        CSS parsing, selector matching, computed styles
+/internal/layout       flexbox engine; input: styled tree + viewport, output: rects
+/internal/paint        display list + software rasterizer -> *image.RGBA
+/internal/text         font loading, shaping, line breaking, measurement
+/*.go                  public package flexui: App, Ctx, handlers, state, re-render loop
+/platform              public interface + implementations
   /platform/headless   renders to image, injects synthetic events (for tests); the reference implementation
   /platform/darwin     real macOS window via purego (written in the cloud, run and verified by the user on a Mac)
   /platform/windows    real Windows window via x/sys/windows (later)
@@ -61,7 +61,7 @@ Anything else: ask before adding. Do not add Gio, Fyne, Ebitengine (as a UI laye
 /testdata        golden PNGs and layout fixtures
 ```
 
-Dependency rule: `dom`, `style`, `layout`, `paint`, `text`, `app` must never import anything from `platform/*` or any OS-specific package.
+Dependency rule: everything under `internal/` and the root `flexui` package must never import anything from `platform/<os>` or any OS-specific package. Backends import `flexui`, never the other way around.
 
 ### Platform interface (keep it small)
 
@@ -97,6 +97,27 @@ Start with the following and document every decision. If something is not listed
 - Paint properties: `background-color`, `border-color`, `border-radius`, `opacity`, `box-shadow` (single shadow), `color`, `font-family`, `font-size`, `font-weight`, `line-height`, `text-align`, `text-overflow: ellipsis`, `white-space`.
 - Selectors: tag, `.class`, `#id`, descendant, child (`>`), `:hover`, `:focus`, `:active`. No specificity beyond a simple fixed order (document it).
 - Sources: inline `style=""` and `<style>` blocks.
+
+## Library design (this must be importable by other projects)
+
+The end product is a Go library, not just an app. Other projects will `go get` it and write apps against it.
+
+- Use a real, importable module path in `go.mod` (placeholder `github.com/<user>/flexui`, I will rename it before publishing). Do not use a local-only name.
+- Public API lives in the root package `flexui` and a few small public packages (`flexui/platform` for the interface, `flexui/platform/darwin` etc. for backends). Keep this surface small and documented with Go doc comments.
+- Move implementation details (`dom`, `style`, `layout`, `paint`, `text`) under `internal/` so they can change freely without breaking users. Only expose what an app author needs.
+- Typical app code should look roughly like this, and `examples/` must be written against only the public API:
+
+```go
+app := flexui.New(flexui.Options{Title: "Hello", Width: 800, Height: 600})
+app.SetView(viewHTML, styleCSS)           // or a func(state) string
+app.Handle("Save", func(c *flexui.Ctx) { /* update state */ })
+darwin.Run(app)                           // or headless.Render(app, "out.png")
+```
+
+- Importing the library must not drag in OS-specific dependencies for other platforms: backends are separate packages, so an app on Linux never compiles purego or the Windows code.
+- Examples live in `examples/` with their own `go.mod` (using a `replace` directive to the local library) so they prove the library works as an external consumer would use it.
+- Use semantic versioning with `v0.x` tags until the API settles. Keep a `CHANGELOG.md`.
+- Include a LICENSE file (ask me which one, default MIT) and record the bundled font's license separately.
 
 ## Milestones and acceptance criteria
 
