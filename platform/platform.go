@@ -32,6 +32,7 @@ const (
 	EventFocus
 	EventBlur
 	EventClose
+	EventPointerLeave // the pointer left the surface
 )
 
 // Event is a platform-independent input event. Coordinates are in logical
@@ -39,14 +40,22 @@ const (
 type Event struct {
 	Kind   EventKind
 	X, Y   float64 // pointer position
-	DX, DY float64 // wheel delta
+	DX, DY float64 // wheel delta in logical pixels; positive DY scrolls down
 	Button int
-	Key    string // key name for key events
+	Key    string // key name for key events: "Tab", "Enter", " ", "Escape", "a", ...
 	Text   string // committed text for EventText
-	Mods   uint8
-	Width  int // new size for EventResize
+	Mods   uint8  // ModShift | ModCtrl | ModAlt | ModMeta
+	Width  int    // new size for EventResize
 	Height int
 }
+
+// Modifier key bits for Event.Mods.
+const (
+	ModShift uint8 = 1 << iota
+	ModCtrl
+	ModAlt
+	ModMeta
+)
 
 // AppHandler is implemented by the application runtime (package app).
 type AppHandler interface {

@@ -6,9 +6,48 @@ versioning with `v0.x` tags until the API settles.
 ## Unreleased
 
 ### Added
+- M9: `examples/demo`, a contacts manager (list, form, modal) using only
+  the public API, with a scripted headless session and goldens;
+  `Ctx.Focus` (focus after the re-render).
+- M7: portability gate (builds/vets all targets, dependency rules on every
+  OS, render hashes on linux/386, `TestHashes` with
+  `testdata/render/hashes.txt`); `platform/darwin` (purego) with
+  `darwin.Run`, staged verification commands and README (compile-checked,
+  not yet run on a Mac); `examples/counter -window`. New dependency:
+  `github.com/ebitengine/purego` v0.10.0 (macOS backend only).
+- M8a text inputs: editing model (`internal/edit`), keyboard editing and
+  movement, clipboard (`App.SetClipboard`), pointer caret and selection,
+  placeholder, `oninput`/`onchange`, `Ctx.Value`, `App.Value`,
+  `platform.EventText` handling, `headless.Session.Type` and `Clipboard`.
+- M5b: inline formatting across `span`, `a`, `strong`/`b`, `em`/`i`,
+  `br` (mixed sizes, weights, line heights, colors, backgrounds); `<img>`
+  (PNG/JPEG, `data:` URLs or `Options.Assets`); a default style sheet for
+  links, buttons and inputs; `:disabled` and the `disabled` attribute;
+  `onfocus`/`onblur`; overlay scrollbars with draggable thumbs;
+  `display: inline`; `layout.AspectRatio`.
+- M6 interaction: hit testing in paint order, `:hover`/`:active`/`:focus`
+  styles, pointer and keyboard focus (Tab order with tabindex), Enter and
+  Space activation, `onkeydown` with `Ctx.PreventDefault`, `App.Focus`,
+  `App.FocusedID`, scroll containers with wheel (chaining) and drag
+  scrolling, `App.ScrollOffset`, focus and scroll kept across
+  re-renders; `platform.EventPointerLeave`; `headless.Session.Drag`,
+  `Leave`.
+- M5 handlers and state: `onclick` handlers bound with `App.Handle`,
+  bubbling and `Ctx.StopPropagation`, `Ctx.Attr`/`ID`/`TargetID`,
+  `App.Invalidate`, `App.Bounds`, re-render after handlers with staged
+  caching (parse/style/layout/place/paint, sheet and text caches,
+  retained frames); `headless.Session` for stepping synthetic events;
+  `platform.Mod*` constants; `examples/counter`.
+- M4 text: bundled Inter 4.1 (OFL), shaping, line breaking, wrapping,
+  `white-space`, `text-align`, `line-height`, `text-overflow: ellipsis`,
+  integer-only glyph rasterizer; text is measured in layout through the
+  new `layout.Measurer` (`Widths`, `Height(w)`). Text layout is compared
+  exactly against Chromium (bundled fonts loaded via `@font-face`) on
+  hand-written and 300 random documents. New dependencies:
+  `github.com/go-text/typesetting` v0.3.5, `golang.org/x/image` v0.23.0.
 - M3: `flexui.RenderHTML(html, css, w, h)` and `CheckHTML`; `App.Frame`
   renders views. HTML5 parsing (`golang.org/x/net/html` v0.38.0), style
-  sheets, selectors and the source-order cascade, inheritance, colors,
+  sheets, selectors and the cascade, inheritance, colors,
   `background-color`, `border`, `border-radius`, `opacity`, `box-shadow`,
   text properties (stored for M4), `z-index` stacking contexts and CSS
   paint order. Golden documents and a pixel diff against Chromium
@@ -28,6 +67,12 @@ versioning with `v0.x` tags until the API settles.
   trees) and a test-case reducer.
 
 ### Changed
+- `span`, `a`, `strong`, `b`, `em`, `i` are inline by default (they were
+  flex items); buttons and inputs have default styles. Documents are laid
+  out in standards mode (the Chromium oracle now uses a doctype).
+- The cascade orders rules by CSS specificity (id, class/pseudo-class,
+  type), then source order; the source-order cascade and its
+  pseudo-class layer (deviation D7) are gone.
 - Implementation packages moved under `internal/`.
 
 ### Fixed (layout, found by differential testing)

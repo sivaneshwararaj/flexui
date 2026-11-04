@@ -83,11 +83,7 @@ func TestDeepNestingCost(t *testing.T) {
 		st.Padding = [4]style.Length{style.Px(1), style.Px(1), style.Px(1), style.Px(1)}
 		n := &Node{Style: &st}
 		if depth == 0 {
-			m := textMeasure(5, geom.Px(10), geom.Px(10))
-			return &Node{Style: &leafStyle, Measure: func(kw, kh Opt, aw, ah Avail) geom.Size {
-				calls++
-				return m(kw, kh, aw, ah)
-			}}
+			return &Node{Style: &leafStyle, Measure: countingMeasure{textMeasure{5, geom.Px(10), geom.Px(10)}, &calls}}
 		}
 		n.Children = []*Node{mk(depth - 1), mk(depth - 1)}
 		return n
@@ -111,4 +107,19 @@ func BenchmarkLayoutCases(b *testing.B) {
 			Layout(roots[j], geom.Px(c.vw), geom.Px(c.vh))
 		}
 	}
+}
+
+type countingMeasure struct {
+	textMeasure
+	calls *int
+}
+
+func (m countingMeasure) Widths() (geom.Unit, geom.Unit) {
+	*m.calls++
+	return m.textMeasure.Widths()
+}
+
+func (m countingMeasure) Height(w geom.Unit) geom.Unit {
+	*m.calls++
+	return m.textMeasure.Height(w)
 }

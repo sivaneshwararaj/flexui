@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Builds and vets every package (library and examples module) for every
-# supported target with cgo disabled. Must pass from a Linux machine.
+# The portability gate (M7). Builds and vets every package (library,
+# macOS backend and its stage commands, examples module) for every
+# supported target with cgo disabled, checks the dependency rules, and
+# checks that rendering is byte-identical on another architecture.
+# Must pass from a Linux machine.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -25,11 +28,35 @@ done
 
 # The root package and internal/ must not depend on platform backends or
 # OS-specific packages (the platform interface package itself is allowed).
-for p in . ./internal/...; do
-	if GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go list -deps "$p" |
-		grep -E 'flexui/platform/|golang.org/x/sys|ebitengine/purego' >/dev/null; then
-		echo "FAIL $p imports a platform backend or OS-specific package"
-		status=1
-	fi
+# Checked for every OS, since files can be OS-specific.
+for t in $targets; do
+	for p in . ./internal/...; do
+		if GOOS="${t%/*}" GOARCH="${t#*/}" CGO_ENABLED=0 go list -deps "$p" |
+			grep -E 'flexui/platform/|golang.org/x/sys|ebitengine/purego' >/dev/null; then
+			echo "FAIL $p imports a platform backend or OS-specific package ($t)"
+			status=1
+		fi
+	done
 done
+# purego only in the macOS backend: the headless platform and the public
+# packages must not pull it in on any OS.
+for t in $targets; do
+	for p in ./platform ./platform/headless; do
+		if GOOS="${t%/*}" GOARCH="${t#*/}" CGO_ENABLED=0 go list -deps "$p" | grep -q ebitengine/purego; then
+			echo "FAIL $p depends on purego ($t)"
+			status=1
+		fi
+	done
+done
+echo "ok   dependency rules"
+
+# Determinism: the golden documents render to the recorded hashes on a
+# different architecture (32-bit) too. (On macOS/Windows, run TestHashes
+# there.)
+if GOARCH=386 CGO_ENABLED=0 go test -count=1 ./internal/render -run '^TestHashes$' >/dev/null; then
+	echo "ok   render hashes on linux/386"
+else
+	echo "FAIL render hashes differ on linux/386"
+	status=1
+fi
 exit $status

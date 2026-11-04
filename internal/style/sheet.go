@@ -2,6 +2,7 @@ package style
 
 import (
 	"fmt"
+	"math/bits"
 	"sort"
 	"strings"
 )
@@ -22,6 +23,7 @@ const (
 	StateHover State = 1 << iota
 	StateFocus
 	StateActive
+	StateDisabled // from the disabled attribute (button, input)
 )
 
 // Sheet is a parsed style sheet.
@@ -35,6 +37,10 @@ type Rule struct {
 	Sel   Selector
 	Decls []Declaration
 	Order int // source position of the rule, across all sheets
+	Spec  int // Sel.Specificity()
+	// UA marks rules of the user-agent (default) style sheet, which lose
+	// to every author rule regardless of specificity (CSS origins).
+	UA bool
 }
 
 // Selector is a sequence of compound selectors joined by combinators.
@@ -51,6 +57,23 @@ func (s *Selector) HasPseudo() bool {
 		}
 	}
 	return false
+}
+
+// Specificity returns the selector's CSS specificity packed as
+// a<<16 | b<<8 | c: a counts ids, b classes and pseudo-classes, c type
+// selectors (`*` counts nothing). Each count saturates at 255.
+func (s *Selector) Specificity() int {
+	var a, b, c int
+	for _, p := range s.Parts {
+		if p.ID != "" {
+			a++
+		}
+		b += len(p.Classes) + bits.OnesCount8(uint8(p.Pseudo))
+		if p.Tag != "" {
+			c++
+		}
+	}
+	return min(a, 255)<<16 | min(b, 255)<<8 | min(c, 255)
 }
 
 // Compound is `tag#id.class:pseudo`; empty fields match anything.
@@ -102,7 +125,7 @@ func ParseSheet(src string, orderBase int) (*Sheet, []Warning) {
 				warns = append(warns, Warning{Msg: err.Error()})
 				continue
 			}
-			sh.Rules = append(sh.Rules, Rule{Sel: sel, Decls: valid, Order: order})
+			sh.Rules = append(sh.Rules, Rule{Sel: sel, Decls: valid, Order: order, Spec: sel.Specificity()})
 		}
 		order++
 	}
@@ -138,7 +161,7 @@ func matchBrace(s string, open int) int {
 }
 
 // ParseSelector parses one complex selector of the subset: compound
-// selectors (type, *, #id, .class, :hover, :focus, :active) joined by
+// selectors (type, *, #id, .class, :hover, :focus, :active, :disabled) joined by
 // descendant (whitespace) or child (>) combinators.
 func ParseSelector(s string) (Selector, error) {
 	var sel Selector
@@ -240,6 +263,8 @@ func parseCompound(s string) (Compound, int, error) {
 				c.Pseudo |= StateFocus
 			case "active":
 				c.Pseudo |= StateActive
+			case "disabled":
+				c.Pseudo |= StateDisabled
 			default:
 				return c, i, fmt.Errorf("pseudo-class :%s is not supported", p)
 			}
@@ -297,6 +322,40 @@ type Cascade struct {
 	rules []Rule
 }
 
+// Pseudo returns the union of the pseudo-classes used anywhere in the
+// cascade's selectors, so callers can skip restyling for state changes
+// that no rule can observe.
+func (c *Cascade) Pseudo() State {
+	var u State
+	for i := range c.rules {
+		for _, p := range c.rules[i].Sel.Parts {
+			u |= p.Pseudo
+		}
+	}
+	return u
+}
+
+// Affects reports whether a change of the pseudo-class flag on el can
+// change any computed style: some rule has a compound selector with that
+// pseudo-class which matches el when dynamic state is ignored. It is
+// conservative (it ignores the rest of the selector), never missing a
+// change.
+func (c *Cascade) Affects(el Element, flag State) bool {
+	for i := range c.rules {
+		for _, p := range c.rules[i].Sel.Parts {
+			if p.Pseudo&flag == 0 {
+				continue
+			}
+			q := p
+			q.Pseudo = 0
+			if q.matches(el) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // NewCascade combines sheets, in order.
 func NewCascade(sheets ...*Sheet) *Cascade {
 	var c Cascade
@@ -309,9 +368,8 @@ func NewCascade(sheets ...*Sheet) *Cascade {
 // Compute returns the computed style of el, whose parent has computed
 // style parent (nil for the root). inline is the element's style=""
 // attribute. Order (spec/SUBSET.md §3): inherited/initial values, then
-// matching rules without pseudo-classes in source order, then matching
-// rules with pseudo-classes in source order, then inline declarations.
-// Specificity is not used. Warnings come from inline declarations only
+// user-agent rules, then author rules, each by ascending specificity
+// with ties broken by source order, then inline declarations. Warnings come from inline declarations only
 // (sheet warnings are reported once by ParseSheet).
 func (c *Cascade) Compute(el Element, parent *Style, inline string) (Style, []Warning) {
 	s := Inherit(parent)
@@ -322,9 +380,11 @@ func (c *Cascade) Compute(el Element, parent *Style, inline string) (Style, []Wa
 		}
 	}
 	sort.SliceStable(matched, func(a, b int) bool {
-		pa, pb := matched[a].Sel.HasPseudo(), matched[b].Sel.HasPseudo()
-		if pa != pb {
-			return !pa
+		if matched[a].UA != matched[b].UA {
+			return matched[a].UA
+		}
+		if matched[a].Spec != matched[b].Spec {
+			return matched[a].Spec < matched[b].Spec
 		}
 		return matched[a].Order < matched[b].Order
 	})
@@ -341,4 +401,12 @@ func (c *Cascade) Compute(el Element, parent *Style, inline string) (Style, []Wa
 	}
 	s.Finish()
 	return s, warns
+}
+
+// MarkUA marks every rule of the sheet as a user-agent rule.
+func (sh *Sheet) MarkUA() *Sheet {
+	for i := range sh.Rules {
+		sh.Rules[i].UA = true
+	}
+	return sh
 }

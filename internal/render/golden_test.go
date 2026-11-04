@@ -30,7 +30,7 @@ const goldenTolerance = 2
 var (
 	docsDir   = filepath.Join("..", "..", "testdata", "render", "docs")
 	goldenDir = filepath.Join("..", "..", "testdata", "render", "golden")
-	hidpiDocs = map[string]bool{"app_shell": true, "radius": true, "zindex_clip": true}
+	hidpiDocs = map[string]bool{"app_shell": true, "radius": true, "text_card": true, "zindex_clip": true}
 	sizeRE    = regexp.MustCompile(`^<!-- size: (\d+)x(\d+) -->`)
 )
 

@@ -72,6 +72,7 @@ type Display uint8
 const (
 	DisplayFlex Display = iota
 	DisplayNone
+	DisplayInline // inline box inside an anonymous inline formatting context (§7.1)
 )
 
 // Position is the `position` property.

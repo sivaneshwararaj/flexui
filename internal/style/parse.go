@@ -223,14 +223,17 @@ func (s *Style) Apply(d Declaration, ctx Context) *Warning {
 
 	switch d.Property {
 	case "display":
-		// Every element is a flex container; block/inline/grid are rejected.
+		// Elements are flex containers or inline boxes (§2, §7.1);
+		// block/grid/... are rejected.
 		switch v {
 		case "flex":
 			s.Display = DisplayFlex
 		case "none":
 			s.Display = DisplayNone
+		case "inline":
+			s.Display = DisplayInline
 		default:
-			return bad("only `flex` and `none` are supported")
+			return bad("only `flex`, `inline` and `none` are supported")
 		}
 	case "position":
 		switch v {

@@ -12,11 +12,13 @@ deviation is listed under **Deviations** with the reason.
 
 | Element | Behavior |
 |---|---|
-| `div`, `span`, `p`, `h1`, `h2`, `h3`, `ul`, `li` | Flex container. No built-in margins, bullets or font changes unless a later milestone adds a default style sheet (to be listed here). |
-| `button` | Flex container; clickable; focusable (M5/M6). |
-| `a` | Flex container; clickable; focusable. No navigation, `href` is ignored. |
-| `input` (text only) | Single-line text field (M8). Other `type`s warn and are treated as `text`. |
-| `img` | Replaced leaf element; `src` will be resolved through an `io/fs.FS`. **Not loaded yet**: an empty box plus a warning. |
+| `div`, `p`, `h1`, `h2`, `h3`, `ul`, `li` | Flex container. No built-in margins, bullets or font changes. |
+| `span`, `strong`, `b`, `em`, `i` | **Inline** (`display: inline` in the default style sheet): part of an inline formatting context with the surrounding text (§7.1). `strong`/`b` are bold; `em`/`i` are upright (D30: no italic face). |
+| `a` | Inline; colored by the default style sheet; clickable and focusable. No navigation, `href` is ignored. |
+| `br` | Forced line break inside inline content. |
+| `button` | Flex container (row, centered) with a default style (§1.1); clickable; focusable; `disabled` supported. |
+| `input` (text only) | Single-line text field with a default style; one line of text tall, 160px wide (§1.3); editing from M8. `disabled` supported. Other `type`s warn and are treated as `text`. |
+| `img` | Replaced leaf element showing a PNG or JPEG (§1.2). |
 | `body` | The **root element** (see below). |
 | `head`, `title`, `meta`, `link`, `style`, `template`, `noscript` | Not rendered. `<style>` contents are style sheets. |
 | `script` | Ignored, with a warning (no JavaScript). |
@@ -28,17 +30,56 @@ browsers. The `<body>` element is the root of the rendered tree: it fills
 the viewport (§2.6) and can be styled with `body { ... }`. `<html>` is not
 part of the tree.
 
-Text runs are anonymous leaf nodes. Each run will be a flex item of its
-parent (M4). Until M4, non-whitespace text is not rendered and produces
-one warning.
+Text and inline elements form anonymous inline boxes, each a flex item of
+its parent (§7.1).
+
+Documents are always laid out in **standards mode** (no quirks), whether
+or not they have a doctype.
+
+### 1.1 Default style sheet
+
+flexui has a small user-agent style sheet, `internal/render/ua.css`
+(listed there in full). Its rules lose to every author rule, whatever
+their specificity (CSS cascade origins), and to inline styles. It makes
+`span, a, strong, b, em, i, br` inline, `strong`/`b` bold, `a` blue, and
+gives `button` and `input` a light bordered look with `:hover`, `:active`,
+`:focus` and `:disabled` states. **D27**: these defaults are flexui's own,
+not browsers' (which differ by platform); the Chromium oracle loads the
+same sheet.
+
+### 1.2 Images
+
+* `<img src>` is a `data:` URL (base64 or percent-encoded) or a path in
+  `Options.Assets` (an `io/fs.FS`; a leading `/` is ignored). Other URLs
+  and missing files warn and leave an empty box. PNG and JPEG are decoded
+  with Go's standard library (deterministic, integer).
+* Natural size: one image pixel per logical pixel. The image is a
+  measured leaf with its natural width as min- and max-content, its
+  height following the width through the aspect ratio, and its width
+  following a definite height (`layout.AspectRatio`). Images fill their
+  content box (no `object-fit`).
+* Drawing: §6.5. Content is clipped to the rounded padding box when
+  `border-radius` is set. **D28**: Chromium (with the oracle's base
+  sheet) does not clip the image to the radius; CSS Backgrounds §5.3 says
+  it should, so flexui does. **D29**: JPEG decoding (Go vs.
+  libjpeg-turbo chroma upsampling) and the scaling filter differ from
+  Chromium by a few levels; layout is identical.
+
+### 1.3 Inputs
+
+An `<input>` is a measured leaf: one line of its font tall, with 160px as
+its min- and max-content width, so a flex row does not shrink it below
+that (as Chromium does).
+
 
 ## 2. Layout model
 
-* Every element is a flex container (`display: flex`). There is no normal
-  flow, inline formatting, floats, inline-block, tables, grid, or margin
+* Every element is a flex container (`display: flex`), except inline
+  elements inside text (§7.1). There is no normal
+  flow, floats, inline-block, tables, grid, or margin
   collapsing.
-* `display` accepts `flex` (initial) and `none`. Any other value (`block`,
-  `inline`, `grid`, ...) warns and is ignored.
+* `display` accepts `flex` (initial), `inline` (§7.1) and `none`. Any
+  other value (`block`, `grid`, ...) warns and is ignored.
 * Initial `flex-direction` is **`column`** (CSS: `row`).
 * Initial `position` is **`relative`** (CSS: `static`). So every element is a
   containing block for its absolutely positioned children (same as React
@@ -52,7 +93,7 @@ Numbers are plain decimals (`12`, `-3.5`, `.25`). Exponents, `calc()`, `em`,
 
 | Property | Values | Initial | Notes |
 |---|---|---|---|
-| `display` | `flex` \| `none` | `flex` | |
+| `display` | `flex` \| `inline` \| `none` | `flex` | | `inline`: §7.1 |
 | `position` | `relative` \| `absolute` | `relative` | `static`, `fixed`, `sticky` unsupported |
 | `flex-direction` | `row` \| `row-reverse` \| `column` \| `column-reverse` | `column` | |
 | `flex-wrap` | `nowrap` \| `wrap` \| `wrap-reverse` | `nowrap` | |
@@ -93,13 +134,13 @@ percentages, the 148 CSS named colors, `transparent`, `currentcolor`;
 | `opacity` | `<number>` \| `<percent>` | `1` | no | clamped to 0..1; creates a stacking context when < 1 |
 | `box-shadow` | `none` \| `<x> <y> [<blur> [<spread>]] [<color>]` | `none` | no | one outer shadow (D16); color first or last; default `currentcolor` |
 | `color` | `<color>` | `black` | yes | |
-| `font-family` | any (stored verbatim) | | yes | used from M4 |
-| `font-size` | `<len>` in px/rem | `16px` | yes | used from M4 |
-| `font-weight` | `normal` \| `bold` \| 1..1000 | `400` | yes | used from M4 |
-| `line-height` | `normal` \| `<number>` \| `<len>` | `normal` | yes | used from M4 |
-| `text-align` | `left` \| `right` \| `center` | `left` | yes | used from M4 |
-| `white-space` | `normal` \| `nowrap` \| `pre` \| `pre-wrap` | `normal` | yes | used from M4 |
-| `text-overflow` | `clip` \| `ellipsis` | `clip` | no | used from M4 |
+| `font-family` | any (stored verbatim) | | yes | every family renders with the bundled Inter (§7.3) |
+| `font-size` | `<len>` in px/rem | `16px` | yes | §7 |
+| `font-weight` | `normal` \| `bold` \| 1..1000 | `400` | yes | §7 |
+| `line-height` | `normal` \| `<number>` \| `<len>` | `normal` | yes | §7 |
+| `text-align` | `left` \| `right` \| `center` | `left` | yes | §7 |
+| `white-space` | `normal` \| `nowrap` \| `pre` \| `pre-wrap` | `normal` | yes | §7 |
+| `text-overflow` | `clip` \| `ellipsis` | `clip` | no | §7 |
 
 `1rem` is always 16px. The root's font size does not change it, because
 `<html>` is not styleable.
@@ -256,7 +297,7 @@ content-sized).
 
 Supported: type (`div`), class (`.a`), id (`#a`), universal (`*`),
 compound (`div.a#b`), descendant (`a b`), child (`a > b`), selector lists
-(`a, b`), pseudo-classes `:hover`, `:focus`, `:active`. Type selectors are
+(`a, b`), pseudo-classes `:hover`, `:focus`, `:active`, `:disabled`. Type selectors are
 case-insensitive; ids and classes are case-sensitive.
 
 Unsupported selectors (`+`, `~`, attribute selectors, pseudo-elements,
@@ -269,14 +310,21 @@ Sources, in order: the `css` argument of `RenderHTML` / `App.SetView`,
 then the document's `<style>` elements in document order, then each
 element's `style=""` attribute.
 
-Cascade order, lowest to highest (no specificity calculation):
+Cascade order, lowest to highest:
 
-1. Initial values.
-2. `<style>` rules in **source order** (later rule wins, regardless of
-   selector specificity).
-3. Rules with a pseudo-class, in source order (so `:hover` overrides the
-   base rule written before or after it).
-4. Inline `style=""`.
+1. Inherited or initial values.
+1. The default (user-agent) style sheet (§1.1), by specificity then
+   source order.
+2. Matching rules by ascending **specificity**, ties broken by source
+   order (later wins). Specificity is the CSS triple (a, b, c): a counts
+   id selectors, b counts class selectors and pseudo-classes, c counts type
+   selectors; `*` and combinators count nothing. Triples compare
+   lexicographically (each count saturates at 255). `:hover` therefore
+   overrides a plain rule only when its selector is at least as specific,
+   exactly as in CSS.
+3. Inline `style=""` (beats every rule, as in CSS).
+
+`!important` is not supported (§2.1), so there is no important layer.
 
 Inheritance: only `color`, `font-family`, `font-size`, `font-weight`,
 `line-height`, `text-align` and `white-space` inherit, as in CSS.
@@ -293,10 +341,9 @@ resolves to the element's computed `color`.
 | D4 | Root `auto` width/height fill the viewport. | App windows, not documents. |
 | D5 | *Removed:* auto margins on absolutely positioned elements now behave as in CSS (§2.4). | |
 | D6 | No baseline alignment. | Not in the subset. |
-| D7 | Cascade by source order + pseudo-class layer, not specificity. | Requested simplicity, documented in §3. |
 | D8 | `overflow` is one value for both axes. | Simplicity. |
 | D9 | *Removed:* width-only measurements no longer drop height information in subtrees that contain a column-wrap container (the only case where widths depend on heights). | |
-| D10 | `MeasureFunc` leaves (text, images) are sized as fit-content: width `max(min-content, min(max-content, available))`, then height at that width. | Same as CSS for text; images get their intrinsic size. |
+| D10 | Measured leaves (text, images) are sized as fit-content: width `max(min-content, min(max-content, available))`, then the height is asked for at exactly that width (`Measurer.Height(w)`). Leaves never derive a width from a height (no aspect ratio yet). | Same as CSS for text; images get their intrinsic size. |
 | D11 | An absolutely positioned box with both `top` and `bottom` set may be placed differently from Chromium when it does not fit its inset-modified containing block. This happens when that block has negative size, or when the box overflows it while `align-self` is not stretch or `height` is set. We place it at `top` plus the alignment offset, with no overflow correction. | Chromium's overflow handling here did not fit any consistent rule we could derive from 12 reduced cases. Rare in practice. |
 | D12 | Intrinsic (content-based) size of a **wrapping** container whose items have an explicit `flex-basis` can differ from Chromium. | Chromium's contribution rule for multi-line containers with explicit bases (7 reduced cases) does not match the single-line rule of §2.3. Not yet characterised. |
 | D13 | Cyclic percentages: percentage heights / bases inside a container whose height is content-derived but definite by §9.8 can resolve against a different intermediate size than Chromium in nested wrap cases. | 3 reduced cases; Chromium relayouts in a different order. |
@@ -310,6 +357,8 @@ resolves to the element's computed `color`.
   resolved against the final width, or the final height if it is definite.
 * **D9** (width-only measurement ignoring heights) is removed; see the
   table above.
+* D7 (cascade by source order and a pseudo-class layer instead of
+  specificity): replaced by real specificity (§3).
 
 ## 6. Painting and rasterization (M2, M3)
 
@@ -341,6 +390,9 @@ padding box with the inner radii. `opacity < 1` becomes an opacity group.
    fit are scaled down uniformly (CSS Backgrounds §5.5). Inner border radii
    are the outer radii minus the adjacent border widths, so they can be
    elliptical.
+5. **Glyphs**: the baseline rounds to the nearest device pixel, the pen x
+   to the nearest quarter device pixel (§7.4).
+6. **Images** fill their snapped content rectangle (§6.5).
 
 ### 6.2 Anti-aliasing and compositing
 
@@ -456,6 +508,305 @@ Every element is positioned (D2), which simplifies CSS 2 Appendix E:
   behind `body`'s background, and is hidden if `body` has one, as in
   browsers.
 
+### 6.5 Images
+
+Each device pixel of the snapped destination rectangle samples the
+source at its center with bilinear filtering in 16.16 fixed point on
+premultiplied RGBA (edge texels clamp; no mipmaps, so strong
+downscaling aliases), and composites source-over (§6.3) through the
+clip. A 1:1 mapping copies source pixels exactly.
+
+## 7. Text (M4)
+
+### 7.1 Inline formatting and anonymous boxes
+
+* An element is **inline** when its computed `display` is `inline` and
+  every element inside it is inline too; otherwise it is laid out as a
+  flex item (with a warning if it was meant to be inline).
+* Among an element's children, each maximal run of text nodes and inline
+  elements forms one **anonymous box** holding an inline formatting
+  context: a flex item of the parent, with the inherited properties of
+  the parent (`color`, `font-*`, `line-height`, `text-align`,
+  `white-space`) and initial values for all others (`flex: 0 1 auto`,
+  `min-width: auto`, no padding or border), exactly CSS's anonymous block.
+  A run without any text after white-space processing is dropped, and its
+  inline elements become flex items.
+* Inside, text flows across inline elements: each text node is a run
+  with its element's `font-weight`, `font-size`, `line-height` and
+  `color`; white space collapses across run boundaries; shaping
+  continues across element boundaries when the font is the same (so
+  kerning applies, as in Chromium); widths are rounded per run.
+* **Line boxes** (CSS 2.1 §10.8, all baselines aligned): each line's
+  height is the maximum extent above and below the baseline of the
+  block's strut and of every inline box with content on the line,
+  including the boxes that enclose that content. An inline box extends
+  above the baseline by its ascent plus half its leading (rounded down to
+  a whole pixel), and below by the rest of its line height.
+* Inline elements support `color`, `font-*`, `line-height` and
+  `background-color` (painted behind each fragment's content area: the
+  text's horizontal extent, from ascent to descent of the element's font,
+  CSS 2.1 §10.6.1). Box properties (`padding`, `margin`, `border`,
+  `width`/`height`, `position`, `overflow`, `opacity`, `box-shadow`,
+  `border-radius`) warn and have no effect. `white-space`, `text-align`
+  and `text-overflow` come from the block. There is no `vertical-align`
+  (everything is on the baseline).
+* Inline elements are hit-tested by their fragments, take `:hover` /
+  `:active` / `:focus`, receive events, and report their bounds
+  (`App.Bounds`) as the union of their fragments.
+* **D24**: if the parent has `text-overflow: ellipsis` and `overflow`
+  other than `visible`, the anonymous box takes that `overflow` and
+  `text-overflow` (so `<div class=title>Long title</div>` ellipsizes). In
+  CSS these properties do not inherit, so text directly inside a flex
+  container never shows an ellipsis.
+* The box is a leaf with a `layout.Measurer`: `Widths()` returns the
+  min-content and max-content widths, and `Height(w)` lays the text out
+  at content width `w` and returns the sum of the line heights. The
+  engine sizes it as fit-content (D10) and asks for the height at exactly
+  the final width.
+* Painting: anonymous boxes are not positioned, so a positioned element's
+  text paints right after its own background and border, before its
+  element children (CSS 2 Appendix E, §6.4). An ellipsizing box clips its
+  glyphs to its border box.
+
+### 7.2 White space, breaking and lines
+
+* `white-space: normal | nowrap`: tabs, newlines and spaces collapse to
+  one space; spaces at the start and end of the run are removed.
+  `pre | pre-wrap`: everything is preserved; `\r\n` and `\r` become
+  `\n`; a final newline does not start an empty line. Tabs advance to the
+  next multiple of 8 space widths from the start of the line.
+* Break opportunities: Unicode line breaking (UAX #14, via
+  `go-text/typesetting/segmenter`), tailored to match Chromium's ICU rules:
+  no break after `/` or `!` directly followed by the next word. Newlines
+  are forced breaks with `pre` and `pre-wrap`. `nowrap` and `pre` never
+  wrap. A word wider than the line overflows (`overflow-wrap: normal`).
+* Lines are filled greedily: the next word is added if the line, without
+  its trailing spaces, still fits the content width.
+* Spaces at the end of a line hang (do not count for fitting, alignment or
+  intrinsic sizes), except with `pre` (they count) and with `pre-wrap`
+  before a forced break or the end of the run, where they only
+  **conditionally hang**: they count when they fit (CSS Text 3 §4.1.3).
+* `text-align` offsets each line within the box's content width; centering
+  rounds down to 1/64 px. Lines wider than the box start at its left
+  edge.
+* `text-overflow: ellipsis` (with D24): a line wider than the box is cut at
+  the last character boundary for which the content plus `…` (U+2026)
+  fits, and `…` is drawn after it.
+
+### 7.3 Fonts, shaping and metrics
+
+* One family is bundled: **Inter 4.1** Regular and Bold (static TrueType,
+  SIL Open Font License, `internal/text/fonts/OFL.txt`). System fonts are
+  never read. Every `font-family` value uses it (no warning: app CSS often
+  lists stacks). `font-weight` above 500 selects Bold, otherwise Regular,
+  which is CSS font matching for faces at 400 and 700. No synthetic bold
+  or italics.
+* Shaping: HarfBuzz (go-text port) with default features (kerning,
+  ligatures, contextual alternates), script Latin, language `en`,
+  left-to-right. Bidi and complex scripts are not supported. The text is
+  shaped in **font units** (integer advances), so all later steps are
+  exact integer arithmetic.
+* Widths (matching Chromium to 1/64 px): a line's width is its advance
+  sum × size / unitsPerEm rounded **up** to 1/64 px. For min-content, a
+  word's width is measured as Chromium does: both ends are rounded up to
+  1/64 px in the coordinates of its hard line, and the width is their
+  difference.
+* `font-size` is a length in 1/64 px, so sizes like `13.3px` are
+  quantized (to 13.296875px).
+* `line-height: normal` is round(ascent) + round(descent) + round(lineGap)
+  in whole pixels, from the `hhea` metrics at the font size (Inter: 0.96875
+  and 0.2412 em, no gap); a number is number × font-size rounded down to
+  1/64 px; a length is used as is. The baseline is the line top plus
+  round(ascent) plus half the leading, the leading being line height −
+  (round(ascent) + round(descent)) and half of it rounded down to a whole
+  pixel.
+
+### 7.4 Glyph rendering
+
+* Glyph outlines are rasterized by flexui (`internal/text/mask.go`) with
+  integer math only: outline points in half font units (exact), scaled to
+  1/256 device px; curves flattened to under 1/16 px error; coverage from
+  16 sample rows per pixel with exact horizontal span coverage, scaled to
+  0..255 with rounding. No hinting. Grayscale anti-aliasing only.
+* Placement (§6.1 rule 5): the glyph origin's x is rounded to the nearest
+  quarter device pixel (four cached variants per glyph), the baseline to
+  the nearest device pixel. The font size scales exactly with the device
+  scale; layout does not change with the scale.
+* The mask is composited with the text color as coverage (§6.3), so
+  `color` alpha and clips apply as for any fill.
+
+### 7.5 Text deviations
+
+| # | Deviation | Reason |
+|---|---|---|
+| D21 | Glyph anti-aliasing differs from Chromium (FreeType coverage with Skia's luminance-dependent contrast/gamma "preblend"). Glyph positions agree; individual edge pixels differ, by up to about 50 of 255 levels, mean error about 0.3-0.5 levels per text document. | Integer-only own rasterizer; deterministic everywhere. |
+| D22 | Layout is independent of the device scale. Chromium rounds `line-height: normal` metrics in device pixels, so at 2x its lines can be up to 0.5 px (one device pixel) shorter. | Same layout on every display; HiDPI is a paint-time scale only. |
+| D23 | Shaping at a soft line end: Chromium sometimes measures a line that ends at a soft break (typically after "Hello,") about 100 font units wider than its shaped advance; we could not derive when. Lines then differ by under 1 px, and rarely the break moves (6 of 450 random documents). | Rare; under 1 px except for one changed break. |
+| D24 | Text in an element with `text-overflow: ellipsis` and clipping `overflow` ellipsizes (§7.1); in CSS it would not, because the anonymous box does not inherit them. | What authors expect; Chromium comparisons wrap text runs in an equivalent block that takes these properties. |
+| D30 | `em` and `i` are not italic, and `font-style` is not supported: only upright Regular and Bold faces are bundled. | Binary size; add an italic face later. |
+
+## 8. Interaction (M5, M6)
+
+### 8.1 Handlers and events
+
+* An element declares handlers by name with attributes: `onclick="Save"`,
+  `onkeydown`, `onfocus`, `onblur` (and `oninput`, `onchange` for inputs,
+  M8). Go registers them with
+  `app.Handle("Save", func(c *flexui.Ctx) {...})`. Other `on*` attributes
+  warn. A name with no registered Go handler warns once (in
+  `App.Warnings`) when it would have run.
+* **Propagation**: an event goes to its target element, then bubbles to
+  each ancestor; every element on the way with a matching attribute has
+  its handler called, deepest first, until one calls
+  `Ctx.StopPropagation()`. There is no capture phase and no default
+  action to prevent (except as listed for keys in M6).
+* **click**: a primary-button press and release form a click. Its target
+  is the nearest common ancestor of the elements under the press and the
+  release (as in browsers), so pressing one button and releasing on
+  another clicks neither. Text belongs to its parent element.
+* `Ctx` gives the event type, the `id` of the element whose handler runs
+  (`ID`) and of the target (`TargetID`), the pointer position or key, and
+  `Attr(name)` to read attributes such as `data-id` from the element whose
+  handler runs.
+
+### 8.2 State and re-rendering
+
+* Go owns the state. A view is either static (`SetView`) or a function of
+  state (`SetViewFunc`), usually an `html/template`.
+* After any handler runs (or after `App.Invalidate()`), the view function
+  is called again before the next event or frame, and its HTML replaces
+  the document. The new document is built from scratch (no tree diffing);
+  interaction state that must survive (focus, scroll positions, M6) is
+  carried over by element `id`, or by tree position for elements without
+  an id.
+* **Caching**: each frame recomputes only the stages whose inputs
+  changed: parse (only when the view's HTML string changed), style
+  (HTML, CSS or pseudo-class state changed), layout (style or viewport
+  changed), placement (scrolling), paint. Parsed style sheets and shaped
+  text runs are cached by source and parameters across rebuilds, so a
+  re-render after a handler re-shapes only text that changed. An
+  unchanged frame copies the retained image. A frame produced
+  incrementally is always byte-identical to a fresh render of the same
+  HTML (tested).
+
+### 8.3 Hit testing
+
+* The element under a point is the **last element in paint order**
+  (§6.4: z-index, stacking contexts, tree order) whose border box contains
+  the point and which is not clipped there by an ancestor's `overflow`
+  (padding-box rectangle). Painting and hit testing use one traversal, so
+  they cannot disagree; `TestHitTestMatchesPaint` checks this pixel by
+  pixel on random overlapping documents.
+* Corner radii are ignored for hit testing (the border box rectangle
+  counts). Elements with `opacity: 0` or a transparent background are still
+  hit, as in browsers. Text hits its parent element. A box with negative
+  `z-index` whose stacking context is the canvas is under `body`, so
+  `body` is hit there (as in browsers).
+
+### 8.4 Pseudo-classes and focus
+
+* `:hover` applies to the element under the pointer and all its
+  ancestors; it is recomputed when the pointer moves, when content
+  scrolls or is re-laid-out under it, and cleared when the pointer leaves
+  the surface. `:active` applies to the pressed element and its ancestors
+  from press to release (or until a drag scroll starts), and to a button
+  held with Space.
+* **Focusable** elements: `button`, `a`, `input`, and any element with a
+  `tabindex` attribute, unless inside a `display: none` subtree. `:focus`
+  applies to the focused element only (no `:focus-within` /
+  `:focus-visible`). Pressing the pointer focuses the nearest focusable
+  element at or above the target; pressing elsewhere blurs.
+  `App.Focus(id)` focuses programmatically.
+* **Keyboard**: key events go to the focused element (or `body`) and
+  bubble (`onkeydown`, with `Ctx.Key` and `Ctx.Mods`). Unless a handler
+  calls `Ctx.PreventDefault()`: Tab / Shift+Tab move focus in sequential
+  focus order (positive `tabindex` ascending, then `tabindex="0"` and
+  naturally focusable elements in tree order; negative `tabindex` is
+  skipped; wraps around); Enter clicks a focused `button` or `a`; Space
+  clicks a focused `button` on release.
+* **D26**: there is no general focus ring: the default style sheet gives
+  `button` and `input` a blue border on `:focus`; other focusable elements
+  need a `:focus` rule in the app's CSS.
+* **`disabled`** (on `button` and `input`): the element matches
+  `:disabled`, is not focusable, gets no `:active`, and no click is
+  dispatched to it or, through it, to its ancestors (as in browsers).
+* **Focus events**: `onfocus` and `onblur` run when focus changes by
+  pointer, keyboard or `App.Focus`. They do not bubble. They do not run
+  when a re-render merely carries focus over to the new document.
+
+### 8.5 Scroll containers
+
+* Scroll containers that overflow draw **overlay scrollbars**: a thumb
+  per scrollable axis, 6px wide, 2px from the padding box edges, at
+  least 20px long, rounded, black at 35% opacity, over the content. The
+  thumb can be dragged (pressing it does not focus, activate or click).
+* `overflow: scroll` makes an element a scroll container that the user
+  can scroll; `overflow: hidden` only clips (as in CSS). The scroll range
+  is the content extent (layout's scrollable overflow, measured from the
+  padding box) minus the padding box size.
+* **Wheel**: scrolls the innermost scroll container under the pointer;
+  what it cannot absorb passes to the next one outward (scroll chaining).
+  Deltas are logical pixels; positive scrolls down/right.
+* **Drag**: pressing over a scroll container and moving more than 4
+  logical px (in either axis) scrolls it with the pointer, like touch.
+  Such a press does not click, and `:active` ends when the drag starts.
+* Scrolling moves the descendants' boxes (painting, clipping and hit
+  testing all follow) without re-running layout. Offsets are clamped
+  after every layout.
+* Scroll offsets are kept across re-renders by element key (§8.2: `id`,
+  or tree position), and re-clamped to the new content.
+* **D25**: scrollbars are overlay scrollbars and take no space (like
+  Chromium with hidden scrollbars, as in the oracle); they are always
+  shown while content overflows. There is no keyboard scrolling, no track
+  clicking and no inertia yet.
+
+### 8.6 Text inputs (M8a)
+
+* An `<input>` holds an editable single line (`internal/edit`): text,
+  caret and selection anchor, on grapheme cluster boundaries. Newlines
+  and control characters are dropped from inserted text; tabs become
+  spaces.
+* **Value**: the `value` attribute sets the text when the input first
+  appears and whenever the attribute changes between renders (if it
+  differs from the current text); otherwise the user's text stays. So
+  both patterns work: a controlled input (`value="{{.Name}}"` plus an
+  `oninput` handler storing `Ctx.Value`) keeps its caret while typing,
+  and an uncontrolled input keeps its edits across re-renders.
+  `App.Value(id)` reads the current text. State is kept by element key
+  (§8.2).
+* **Typing**: platforms send committed text (`EventText`;
+  `headless.Session.Type`). Keys, after `onkeydown` handlers (which can
+  `PreventDefault`):
+
+  | Key | Action (Shift extends the selection) |
+  |---|---|
+  | ArrowLeft / ArrowRight | one grapheme; with Alt or Ctrl one word; with Meta to the line start/end |
+  | Home / End, ArrowUp / ArrowDown | to the start / end |
+  | Backspace / Delete | the selection, else one grapheme (Alt/Ctrl: word, Meta: to the start/end) |
+  | Ctrl/Meta + A, C, X, V | select all, copy, cut, paste (`App.SetClipboard`; in-memory by default) |
+  | Enter | `change` event if the value changed |
+  | Tab | focus traversal (§8.4) |
+
+  Words: a word is a run of letters, digits, `_` and `'`; moving left goes
+  to the start of the previous word, right to the end of the next one
+  (macOS behavior, also used elsewhere).
+* **Pointer**: pressing in a focusable input focuses it and puts the caret
+  at the nearest grapheme boundary; dragging extends the selection (the
+  text does not autoscroll while dragging).
+* **Events**: `oninput` after every change of the text (typing, deletion,
+  cut, paste) and `onchange` when the input loses focus or Enter is
+  pressed, if the value differs from the last `change` or from when it
+  was focused (as in browsers, `change` comes before `blur`). Both bubble;
+  `Ctx.Value` holds the text.
+* **Drawing**: the text (or the `placeholder` attribute, gray, when
+  empty) on one line, vertically centered and clipped to the content box,
+  scrolled horizontally so the caret stays visible. While focused, a
+  1px caret in the text color (or a light blue selection highlight).
+* Not supported yet: IME composition (macOS step, M8), undo, double-click
+  word selection, autoscroll while drag-selecting, `maxlength`,
+  `readonly`, password fields. **D31**: the caret does not blink (frames
+  are deterministic; a platform may add blinking later).
+
 ## 5. Verification
 
 Layout behavior is checked against Chromium:
@@ -477,7 +828,7 @@ Layout behavior is checked against Chromium:
   and check that steady-state frames allocate nothing.
 * RenderHTML output is checked against **Chromium screenshots**
   (`internal/render/chrome_test.go`). The documents in
-  `testdata/render/docs` (non-text, 13 documents, 3 also at 2x) are
+  `testdata/render/docs` (17 documents, 4 also at 2x) are
   screenshotted by `scripts/screenshot.cjs` (`make crosscheck`) with a
   base sheet encoding D1-D4 and D20. For each one the test reports the max
   error, the mean absolute channel error, and the share of pixels off by
@@ -486,6 +837,32 @@ Layout behavior is checked against Chromium:
   their deviation (D17 shadows, D18 curve AA, D19 opacity rounding) and
   bounds about 1.5x their measured error. Current numbers are in
   `spec/STATUS.md`.
+* Text layout is compared with Chromium **exactly** (1/64 px): the border
+  box of every element and anonymous text box, and every line's text, x,
+  y, width and height (`internal/render/text_test.go`). Chromium loads the
+  bundled fonts through `@font-face`, and every text run is wrapped in an
+  `<x-t>` block equivalent to the anonymous box (`scripts/flexui-page.cjs`,
+  `scripts/textcheck.cjs`). Inputs: 12 hand-written documents in
+  `testdata/text/docs` (wrapping, sizes, weights, alignment, line height,
+  white space, ellipsis, row items, nested content-sized boxes, mixed
+  content, inline formatting) and 300 seeded random documents, plus 150
+  seeded random documents of inline content (nested spans with sizes,
+  weights, line heights, links, `br`, alignment). The oracle runs in
+  standards mode with flexui's default style sheet. Accepted mismatches are listed
+  in `knownTextDiffs` with a deviation and a tolerance (D14 rounding of
+  flex sizes: 2/64 px; D23: 0.5 px); the test fails if a listed case
+  starts matching exactly. Text RenderHTML documents are also in the
+  screenshot diff, with bounds for D21/D22.
+* **Determinism gate** (M7): `TestHashes` renders every golden document
+  (and 2x variant) and compares SHA-256 hashes of the pixels with
+  `testdata/render/hashes.txt`. `scripts/check-portability.sh` runs it on
+  linux/386 besides the normal amd64 run, builds and vets everything
+  (including the macOS backend and its stages) for linux, darwin and
+  windows on amd64/arm64 with `CGO_ENABLED=0`, and checks the dependency
+  rules for every target (no platform backend, purego or x/sys in the
+  core; purego only in `platform/darwin`). On macOS and Windows, run
+  `go test ./internal/render -run TestHashes` there. App goldens
+  (`testdata/app`) are compared byte for byte too.
 * `go test ./internal/layout -run TestReduce -v -args -reduce=CASE`
   minimizes a failing case against a live Chromium
   (`scripts/chrome-serve.cjs`). It deletes subtrees and declarations while

@@ -7,7 +7,7 @@ check: fmt vet test portability
 
 test:
 	go test ./...
-	cd examples && go vet ./...
+	cd examples && go vet ./... && go test ./...
 
 vet:
 	go vet ./...
@@ -18,7 +18,8 @@ fmt:
 portability:
 	./scripts/check-portability.sh
 
-# Regenerate testdata/layout/chrome.json from headless Chromium (needs node +
-# playwright). Only needed when layout test cases are added or changed.
+# Regenerate the Chromium oracle data (layout, screenshots, text) from
+# headless Chromium (needs node + playwright). Only needed when test
+# documents or the oracle setup change.
 crosscheck:
 	./scripts/crosscheck.sh

@@ -1,0 +1,18 @@
+/* flexui's default (user-agent) style sheet: spec/SUBSET.md §1.1. Its
+   rules lose to every author rule (CSS cascade origins). The Chromium
+   oracle loads this same file (scripts/flexui-page.cjs). */
+span, a, strong, b, em, i, br { display: inline; }
+strong, b { font-weight: 700; }
+a { color: #1a5fd0; }
+button { flex-direction: row; align-items: center; justify-content: center;
+  padding: 4px 12px; border: 1px solid #b6bcc5; border-radius: 4px;
+  background-color: #f3f4f6; color: #1e222a; }
+button:hover { background-color: #e8eaee; }
+button:active { background-color: #dcdfe4; }
+button:focus { border-color: #3478f6; }
+button:disabled { background-color: #f6f7f9; border-color: #dadde2; color: #9aa0a8; }
+input { flex-direction: row; align-items: center; width: 160px;
+  padding: 4px 6px; border: 1px solid #b6bcc5; border-radius: 4px;
+  background-color: #fff; color: #1e222a; white-space: pre; }
+input:focus { border-color: #3478f6; }
+input:disabled { background-color: #f3f4f6; color: #9aa0a8; }
