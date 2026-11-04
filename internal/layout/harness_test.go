@@ -100,12 +100,23 @@ func textMeasure(words int, ww, wh geom.Unit) MeasureFunc {
 
 // collect returns absolute rects of all nodes with ids.
 func collect(s *spec, n *Node, ox, oy geom.Unit, out map[string]rect) {
+	collectHidden(s, n, ox, oy, out, false)
+}
+
+// collectHidden mirrors browsers, which report display:none subtrees as
+// empty rects at the origin.
+func collectHidden(s *spec, n *Node, ox, oy geom.Unit, out map[string]rect, hidden bool) {
+	hidden = hidden || n.Style.Display == style.DisplayNone
 	x, y := ox+n.Box.X, oy+n.Box.Y
 	if s.id != "" {
-		out[s.id] = rect{x.Float(), y.Float(), n.Box.W.Float(), n.Box.H.Float()}
+		if hidden {
+			out[s.id] = rect{}
+		} else {
+			out[s.id] = rect{x.Float(), y.Float(), n.Box.W.Float(), n.Box.H.Float()}
+		}
 	}
 	for i, k := range s.kids {
-		collect(k, n.Children[i], x, y, out)
+		collectHidden(k, n.Children[i], x, y, out, hidden)
 	}
 }
 
@@ -144,7 +155,7 @@ func loadChrome(t *testing.T) map[string]map[string]rect {
 func TestLayoutCases(t *testing.T) {
 	chrome := loadChrome(t)
 	seen := map[string]bool{}
-	for _, c := range cases {
+	for _, c := range allCases() {
 		if seen[c.name] {
 			t.Fatalf("duplicate case name %q", c.name)
 		}
@@ -165,6 +176,14 @@ func TestLayoutCases(t *testing.T) {
 			ref, ok := chrome[c.name]
 			if !ok {
 				t.Fatalf("no Chromium reference for this case; run `make crosscheck`")
+			}
+			if dev, ok := knownRandomMismatches[c.name]; ok {
+				for id := range ref {
+					if !closeRect(got[id], ref[id]) {
+						t.Skipf("known mismatch with Chromium: %s", dev)
+					}
+				}
+				t.Fatalf("listed as a known mismatch (%s) but now matches Chromium; remove it from knownRandomMismatches", dev)
 			}
 			for _, id := range sortedKeys(ref) {
 				if g := got[id]; !closeRect(g, ref[id]) {
@@ -197,38 +216,44 @@ func TestEmitHTML(t *testing.T) {
 	if err := os.MkdirAll(*emitHTML, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, c := range cases {
+	for _, c := range allCases() {
 		if c.noChrome != "" {
 			continue
 		}
-		var sb strings.Builder
-		fmt.Fprintf(&sb, `<!doctype html><html><head><meta charset="utf-8"><style>
-html,body{margin:0;padding:0}
-#vp{position:absolute;left:0;top:0;width:%dpx;height:%dpx;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
-#vp *{display:flex;flex-direction:column;position:relative;margin:0;padding:0;border:0 solid;box-sizing:content-box;min-width:auto;min-height:auto}
-</style></head><body><div id="vp">`, c.vw, c.vh)
-		writeSpec(&sb, c.root)
-		sb.WriteString("</div></body></html>\n")
-		if err := os.WriteFile(filepath.Join(*emitHTML, c.name+".html"), []byte(sb.String()), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(*emitHTML, c.name+".html"), []byte(caseHTML(c)), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 }
 
+// caseHTML renders a case as a standalone HTML document whose base style
+// sheet encodes the subset's defaults (SUBSET.md deviations D1-D4).
+func caseHTML(c layoutCase) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, `<!doctype html><html><head><meta charset="utf-8"><style>
+html,body{margin:0;padding:0}
+#vp{position:absolute;left:0;top:0;width:%dpx;height:%dpx;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
+#vp *{display:flex;flex-direction:column;position:relative;margin:0;padding:0;border:0 solid;box-sizing:content-box;min-width:auto;min-height:auto}
+</style></head><body><div id="vp">`, c.vw, c.vh)
+	writeSpec(&sb, c.root)
+	sb.WriteString("</div></body></html>\n")
+	return sb.String()
+}
+
 func writeSpec(sb *strings.Builder, s *spec) {
-	css := s.css
-	if s.leaf == leafText {
-		// Emulate wrapping words with a wrapping row of fixed boxes.
-		css = "flex-direction:row;flex-wrap:wrap;align-content:flex-start;align-items:flex-start;" + css
-	}
-	fmt.Fprintf(sb, `<div data-id="%s" style="%s">`, html.EscapeString(s.id), html.EscapeString(css))
+	fmt.Fprintf(sb, `<div data-id="%s" style="%s">`, html.EscapeString(s.id), html.EscapeString(s.css))
 	switch s.leaf {
 	case leafFixed:
 		fmt.Fprintf(sb, `<i style="width:%dpx;height:%dpx;flex-shrink:0"></i>`, s.w, s.h)
 	case leafText:
+		// Emulate wrapping words with a wrapping row of fixed boxes inside
+		// a wrapper, so the leaf's own container properties cannot affect
+		// the "text".
+		sb.WriteString(`<i style="flex:1 1 auto;align-self:stretch;flex-direction:row;flex-wrap:wrap;align-content:flex-start;align-items:flex-start">`)
 		for i := 0; i < s.words; i++ {
 			fmt.Fprintf(sb, `<i style="width:%dpx;height:%dpx;flex-shrink:0"></i>`, s.w, s.h)
 		}
+		sb.WriteString(`</i>`)
 	}
 	for _, k := range s.kids {
 		writeSpec(sb, k)

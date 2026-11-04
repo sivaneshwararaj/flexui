@@ -13,5 +13,20 @@ versioning with `v0.x` tags until the API settles.
 - Internal flexbox layout engine verified against Chromium (M1).
 - `examples/` module written against the public API only.
 
+- Randomized differential layout testing against Chromium (2400 seeded
+  trees) and a test-case reducer.
+
 ### Changed
 - Implementation packages moved under `internal/`.
+
+### Fixed (layout, found by differential testing)
+- Cyclic percentages: horizontal percentages, percentage padding/margins
+  and gaps now resolve against the final container size.
+- Intrinsic sizes of row containers (contributions, flex-basis handling),
+  fit-content of wrapping containers, column-wrap line breaking and widths.
+- §9.8 definiteness (stretched items, definite flex-basis), stretch only
+  for `auto` cross sizes.
+- Absolute positioning: auto margins, `align-self` with both vertical
+  insets, shrink-to-fit from the static position.
+- Distribution rounding and overflow fallbacks match Chromium, including
+  reversed containers.

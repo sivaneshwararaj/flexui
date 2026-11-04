@@ -26,10 +26,13 @@
   percentages with §9.8 definiteness, intrinsic (fit-content /
   min-content / max-content) sizing, relative and absolute positioning,
   `display: none`, scrollable-overflow extents (`Box.ContentW/H`).
-* Layout is verified against Chromium: 106 cases in
-  `layout/cases_test.go`, reference data in `testdata/layout/chrome.json`
-  (`make crosscheck`). All match to 1/64 px. Hand-written expectations
-  cover the basic cases too.
+* Layout is verified against Chromium: 111 hand-written cases plus 2400
+  seeded random trees (`internal/layout/random_test.go`), reference data in
+  `testdata/layout/chrome.json` (`make crosscheck`). All match to 1/64 px
+  except 25 random cases (about 1%), which are listed with deviation
+  numbers D11-D14 in `spec/SUBSET.md`. A reducer
+  (`TestReduce -reduce=CASE`) shrinks any mismatch to a minimal tree
+  against a live Chromium.
 * Cost: intrinsic sizing is linear-ish in tree size (about 7 measure calls
   per leaf on a 10-deep tree of auto-sized nested rows/columns). All 106
   cases lay out in ~0.5 ms total.
@@ -47,11 +50,11 @@
 
 ## Known limitations / bugs
 
-* Deviation D9 (spec): width-only intrinsic sizing does not see heights,
-  which matters only for column-wrap containers inside content-sized boxes.
-  Not covered by tests.
-* `layout` allocates one item slice per container per pass (~600 allocs for
-  the whole test suite). Fine for now; reuse buffers if profiling shows it
-  matters.
-* Percentage gaps against an indefinite container size resolve to 0 (CSS
-  resolves them against the final size for layout).
+* Layout deviations D11-D14 (`spec/SUBSET.md` §4): absolute boxes with
+  both vertical insets that overflow, intrinsic sizes of wrapping
+  containers with explicit `flex-basis`, some nested cyclic percentages,
+  and 2/64 px rounding differences.
+* `layout` allocates one item slice per container per pass. Fine for now;
+  reuse buffers if profiling shows it matters.
+* The root `flexui.App` does not render views yet (M3) or run handlers
+  (M5).

@@ -72,6 +72,9 @@ type Node struct {
 	cache  [cacheSize]cacheEntry
 	ncache uint8
 	next   uint8
+	// colWrap: this subtree contains a column-wrap container, whose width
+	// depends on its height. Computed per pass by resetCache.
+	colWrap bool
 }
 
 const cacheSize = 12
@@ -130,11 +133,16 @@ func Layout(root *Node, viewportW, viewportH geom.Unit) {
 	})
 }
 
-func resetCache(n *Node) {
+func resetCache(n *Node) bool {
 	n.ncache, n.next = 0, 0
+	st := n.Style
+	n.colWrap = len(n.Children) > 0 && !st.FlexDirection.IsRow() && st.FlexWrap != style.NoWrap
 	for _, c := range n.Children {
-		resetCache(c)
+		if resetCache(c) {
+			n.colWrap = true
+		}
 	}
+	return n.colWrap
 }
 
 // compute returns the border-box size of n. With in.perform it also lays
@@ -174,15 +182,12 @@ func (n *Node) compute(in input) geom.Size {
 //   - The available height never matters: heights are content-based
 //     (only a column-wrap container breaks lines by height, and it uses
 //     its own height/max-height for that).
-//   - For width-only calls, nothing about the height matters.
-//
-// Column-wrap containers are exempt (their width depends on their height).
-// Known limitation: a column-wrap container nested inside a node sized by
-// a width-only call sees no definite ancestor height for percentages.
+//   - For width-only calls nothing about the height matters, unless the
+//     subtree contains a column-wrap container (whose width depends on
+//     its height); then the inputs are kept and the full algorithm runs.
 func (n *Node) canonical(in input) input {
-	st := n.Style
-	if len(n.Children) > 0 && !st.FlexDirection.IsRow() && st.FlexWrap != style.NoWrap {
-		in.wantW = false
+	if n.colWrap {
+		in.wantW = in.wantW && !n.isColWrap()
 		return in
 	}
 	in.avail[1] = Avail{Kind: MaxContent}
@@ -190,6 +195,11 @@ func (n *Node) canonical(in input) input {
 		in.known[1], in.definite[1], in.ignoreSize[1], in.parent[1] = Opt{}, false, false, Opt{}
 	}
 	return in
+}
+
+func (n *Node) isColWrap() bool {
+	st := n.Style
+	return len(n.Children) > 0 && !st.FlexDirection.IsRow() && st.FlexWrap != style.NoWrap
 }
 
 func (n *Node) leaf(in input) geom.Size {
@@ -238,11 +248,14 @@ func (n *Node) leaf(in input) geom.Size {
 
 // ownSizes returns the node's border-box sizes that are known before
 // looking at content (imposed by the parent or set in style), and whether
-// each counts as definite for percentages.
+// each counts as definite for percentages. A known width always counts:
+// horizontal percentages resolve against the final width even when it
+// came from content (CSS cyclic percentages); only heights need §9.8
+// definiteness.
 func ownSizes(b *boxStyle, in input) (sz [2]Opt, definite [2]bool) {
 	for a := 0; a < 2; a++ {
 		if in.known[a].OK {
-			sz[a], definite[a] = in.known[a], in.definite[a]
+			sz[a], definite[a] = in.known[a], in.definite[a] || a == 0
 		} else if b.size[a].OK && !in.ignoreSize[a] {
 			sz[a], definite[a] = some(b.clamp(a, b.size[a].V)), true
 		}
