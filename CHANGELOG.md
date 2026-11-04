@@ -13,6 +13,10 @@ versioning with `v0.x` tags until the API settles.
 - Internal flexbox layout engine verified against Chromium (M1).
 - `examples/` module written against the public API only.
 
+- Software rasterizer (M2): `Canvas` draw interface, display list,
+  integer-only `Raster` with rounded rects, borders, box shadow, clipping,
+  opacity groups and HiDPI scale; documented pixel-snapping rule; golden
+  PNG tests.
 - Randomized differential layout testing against Chromium (2400 seeded
   trees) and a test-case reducer.
 

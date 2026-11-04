@@ -266,6 +266,62 @@ Inheritance: only text properties (`color`, `font-*`, `line-height`,
 * **D9** (width-only measurement ignoring heights) is removed; see the
   table above.
 
+## 6. Painting and rasterization (M2)
+
+The renderer draws through `paint.Canvas` (fill rounded rect, border,
+box shadow, clip, opacity group). Commands are recorded into a display list
+(`paint.List`) in logical units. The software rasterizer (`paint.Raster`)
+turns them into an `*image.RGBA` using **integer arithmetic only**. The
+CSS paint properties that will feed these commands (M3) are
+`background-color`, `border-color` (one color for all sides, see D15),
+`border-radius`, `opacity`, `box-shadow` (one outer shadow, see D16),
+and the text properties in M4.
+
+### 6.1 Pixel-snapping rule
+
+1. Logical lengths (1/64 px) are scaled to device units (1/64 device px).
+   The device scale is fixed-point with 1/64 precision: 1, 1.25, 1.5 and 2
+   are exact. It is converted from the platform's float once per frame.
+2. Every **rectangle edge** is rounded independently to the nearest
+   device-pixel boundary, halves rounding up: `x0 = round(x)`,
+   `x1 = round(x + w)`. This applies to fills, borders' outer edges, clip
+   rects, and shadow shapes after offset and spread. Boxes that touch in
+   layout touch exactly in pixels, with no gaps and no double-painted
+   seams. A box's pixel size can differ from its layout size by one pixel.
+3. **Border widths** round to whole device pixels, with a minimum of one
+   pixel for any non-zero width. The inner edge is the snapped outer edge
+   minus the snapped width, so a uniform border is equally thick on all
+   sides wherever the box lands.
+4. **Corner radii, blur and spread are not snapped.** Radii that do not
+   fit are scaled down uniformly (CSS Backgrounds §5.5). Inner border radii
+   are the outer radii minus the adjacent border widths, so they can be
+   elliptical.
+
+### 6.2 Anti-aliasing and compositing
+
+* Straight edges are pixel-aligned (6.1), so only rounded corners need
+  anti-aliasing. Corner pixels use 8x8 supersampling (65 coverage levels)
+  with exact 128-bit ellipse tests. Pixels entirely inside or outside the
+  curve are classified exactly without sampling.
+* Colors are non-premultiplied sRGB in, premultiplied RGBA8 out,
+  source-over, with exact rounding of `/255`. Blending is in sRGB space, as
+  browsers do.
+* Clips: rectangle clips intersect bounds. Rounded clips multiply coverage
+  (anti-aliased clip edges).
+* Opacity groups render into an offscreen layer covering the current clip
+  bounds and are composited with the group alpha. Overlaps inside a group
+  are therefore not visible, as in CSS `opacity`.
+* Box shadow: the shape is the box offset by (x, y) and grown by spread
+  (radii grow by spread). Its coverage is blurred by three box-blur passes
+  per axis whose combined variance approximates a Gaussian with
+  sigma = blur/2 (CSS). The shadow is not painted inside the box itself.
+
+| # | Deviation | Reason |
+|---|---|---|
+| D15 | One `border-color` for all four sides. | Not needed for app UIs yet; easy to extend. |
+| D16 | Only one, outer `box-shadow` (no `inset`, no lists). | Subset. |
+| D17 | Shadow blur is a 3-pass box blur (a close approximation of the Gaussian); pixels may differ slightly from browsers. | Integer-only, fast, deterministic. |
+
 ## 5. Verification
 
 Layout behavior is checked against Chromium:
@@ -281,6 +337,10 @@ Layout behavior is checked against Chromium:
   base style sheet that encodes D1-D4, and writes the rectangles to
   `testdata/layout/chrome.json`. `go test` compares against that file
   (tolerance 1/64 px) without needing a browser.
+* Painting is checked with golden PNGs (`testdata/paint`,
+  `go test ./internal/paint -run TestGolden -update` to regenerate; look at
+  the images before committing). Unit tests cover the snapping invariants
+  and check that steady-state frames allocate nothing.
 * `go test ./internal/layout -run TestReduce -v -args -reduce=CASE`
   minimizes a failing case against a live Chromium
   (`scripts/chrome-serve.cjs`). It deletes subtrees and declarations while

@@ -29,7 +29,7 @@ Implementation (`internal/`, free to change):
 | `internal/geom` | `Unit` (fixed-point 1/64 px), `Rect`, `Size`, `Edges`, 128-bit `MulDiv`. | stdlib |
 | `internal/style` | Computed `Style`, value types, declaration parser, warnings. Selectors/cascade in M3. | `geom` |
 | `internal/layout` | Flexbox engine. Input: tree of `*layout.Node`. Output: `Node.Box`. | `geom`, `style` |
-| `internal/paint` | `Canvas` draw interface, display list, fixed-point software rasterizer (M2). | `geom` |
+| `internal/paint` | `Canvas` draw interface, `List` display list, `Raster` integer-only software rasterizer. | `geom` |
 | `internal/dom` | HTML → node tree (M3). | `golang.org/x/net/html` |
 | `internal/text` | Font, shaping, line breaking (M4). | `go-text/typesetting` |
 
@@ -94,3 +94,21 @@ declaration strings. Each case is checked two ways:
   bundled fonts only; `path`/`io/fs` for paths; `\n` line endings
   (`.gitattributes`).
 * Pre-commit: `make check` (gofmt, vet, test, portability).
+
+## Paint (`internal/paint/`)
+
+* `paint.go`: `Color`, `RRect`, `Shadow`, the `Canvas` interface and the
+  `List` display list (record, `Replay` into any Canvas). Producers (M3)
+  emit logical-unit commands; backends decide snapping and AA, so a GPU
+  backend can be added behind the same interface.
+* `raster.go`: `Raster` (software Canvas): snapping (`shapeOf`,
+  `snapWidth`), coverage-weighted fills, borders as outer-minus-inner
+  coverage, clip stack (bounds + rounded clip masks), opacity layers from a
+  reused pool. `Begin(dst, Scale64(scale))` / `End()` per frame.
+* `shape.go`: snapped device-space rounded rect, radius normalization,
+  coverage (exact classification + 8x8 supersampling, 128-bit ellipse
+  test).
+* `shadow.go`: shadow mask, 3+3 box-blur passes with exact reciprocal
+  division, composite outside the box.
+* Tests: `golden_test.go` (scenes -> `testdata/paint/*.png`, `-update`),
+  `raster_test.go` (snapping invariants, determinism, no allocations).
