@@ -108,8 +108,12 @@ func (d *Demo) find(id int) int {
 	return -1
 }
 
+// selectContact shows contact id in the form. It clears the status line:
+// a message like "Saved X." is about the previous selection. (Add and
+// delete set their own status after selecting.)
 func (d *Demo) selectContact(id int) {
 	d.selected, d.dirty = id, false
+	d.status = ""
 	if i := d.find(id); i >= 0 {
 		d.draft = d.contacts[i]
 	} else {
