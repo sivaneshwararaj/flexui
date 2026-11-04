@@ -131,6 +131,19 @@ func (s *Session) Move(x, y float64) {
 	s.Send(platform.Event{Kind: platform.EventPointerMove, X: x, Y: y})
 }
 
+// Leave moves the pointer off the surface.
+func (s *Session) Leave() { s.Send(platform.Event{Kind: platform.EventPointerLeave}) }
+
+// Drag presses at (x0, y0), moves to (x1, y1) in steps, and releases.
+func (s *Session) Drag(x0, y0, x1, y1 float64, steps int) {
+	s.Move(x0, y0)
+	s.Press(x0, y0)
+	for i := 1; i <= steps; i++ {
+		s.Move(x0+(x1-x0)*float64(i)/float64(steps), y0+(y1-y0)*float64(i)/float64(steps))
+	}
+	s.Release(x1, y1)
+}
+
 // Press presses the primary button at (x, y).
 func (s *Session) Press(x, y float64) {
 	s.Send(platform.Event{Kind: platform.EventPointerDown, X: x, Y: y})

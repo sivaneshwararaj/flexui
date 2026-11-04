@@ -62,9 +62,15 @@ type Document struct {
 	Dom      *dom.Document
 	Root     *Box
 	Warnings []string
-	seen     map[string]bool
-	cache    *Cache
+	// Pseudo is the set of pseudo-classes the document's rules use.
+	Pseudo style.State
+	seen   map[string]bool
+	cache  *Cache
+	boxes  map[*dom.Node]*Box
 }
+
+// BoxOf returns the box of element n, or nil.
+func (d *Document) BoxOf(n *dom.Node) *Box { return d.boxes[n] }
 
 func (d *Document) warn(format string, args ...any) {
 	m := fmt.Sprintf(format, args...)
@@ -98,7 +104,7 @@ func Build(html, css string) *Document {
 func (c *Cache) Style(p *Parsed, css string) *Document {
 	c.Stats.Styles++
 	c.gen++
-	d := &Document{Dom: p.Dom, seen: map[string]bool{}, cache: c}
+	d := &Document{Dom: p.Dom, seen: map[string]bool{}, cache: c, boxes: map[*dom.Node]*Box{}}
 	for _, w := range p.Warnings {
 		d.warn("%s", w)
 	}
@@ -112,7 +118,9 @@ func (c *Cache) Style(p *Parsed, css string) *Document {
 		}
 		sheets = append(sheets, sh)
 	}
-	d.Root = d.build(style.NewCascade(sheets...), p.Dom.Root, nil)
+	cas := style.NewCascade(sheets...)
+	d.Pseudo = cas.Pseudo()
+	d.Root = d.build(cas, p.Dom.Root, nil)
 	c.sweep()
 	return d
 }
@@ -124,6 +132,7 @@ func (d *Document) build(c *style.Cascade, el *dom.Node, parent *style.Style) *B
 	}
 	b := &Box{El: el, Style: st}
 	b.Lay = &layout.Node{Style: &b.Style}
+	d.boxes[el] = b
 	if el.Tag() == "img" {
 		d.warn("<img> is not rendered yet: it is an empty box")
 	}

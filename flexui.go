@@ -80,6 +80,8 @@ type Ctx struct {
 	X, Y float64
 	// Key is the key name for key events ("Enter", "a", ...).
 	Key string
+	// Mods holds the modifier keys of key events (platform.ModShift, ...).
+	Mods uint8
 }
 
 // App returns the application the event belongs to.
@@ -92,6 +94,10 @@ func (c *Ctx) Attr(name string) string { return c.ev.Current.Attr(name) }
 // StopPropagation stops the event from reaching handlers on ancestor
 // elements.
 func (c *Ctx) StopPropagation() { c.stop = true }
+
+// PreventDefault suppresses the default action of the event: for keydown,
+// focus traversal (Tab) and activation (Enter, Space).
+func (c *Ctx) PreventDefault() { c.ev.Prevented = true }
 
 // App is a flexui application. It implements platform.AppHandler, so any
 // backend can run it.
@@ -214,6 +220,10 @@ func (a *App) Event(e platform.Event) {
 	switch e.Kind {
 	case platform.EventResize:
 		a.w, a.h = e.Width, e.Height
+	case platform.EventPointerMove:
+		a.view.PointerMove(unit(e.X), unit(e.Y))
+	case platform.EventPointerLeave:
+		a.view.PointerLeave()
 	case platform.EventPointerDown:
 		if e.Button == 0 {
 			a.view.PointerDown(unit(e.X), unit(e.Y))
@@ -222,7 +232,39 @@ func (a *App) Event(e platform.Event) {
 		if e.Button == 0 {
 			a.view.PointerUp(unit(e.X), unit(e.Y))
 		}
+	case platform.EventWheel:
+		a.view.Wheel(unit(e.X), unit(e.Y), unit(e.DX), unit(e.DY))
+	case platform.EventKeyDown:
+		a.view.KeyDown(e.Key, e.Mods, e.Mods&platform.ModShift != 0)
+	case platform.EventKeyUp:
+		a.view.KeyUp(e.Key)
 	}
+}
+
+// Focus focuses the element with the given id ("" blurs), as if it had
+// been clicked or tabbed to. It reports whether a focusable element with
+// that id exists in the current view.
+func (a *App) Focus(id string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.refresh()
+	return a.view.FocusID(id)
+}
+
+// FocusedID returns the id of the focused element ("" if none).
+func (a *App) FocusedID() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.view.FocusedID()
+}
+
+// ScrollOffset returns how far the scroll container with the given id is
+// scrolled, in logical pixels.
+func (a *App) ScrollOffset(id string) (x, y float64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	o := a.view.ScrollOffset(id)
+	return o.X.Float(), o.Y.Float()
 }
 
 // call runs the Go handler for one element on an event's path. It is the
@@ -237,7 +279,7 @@ func (a *App) call(ev *view.Event) bool {
 		return false
 	}
 	c := &Ctx{app: a, ev: ev, Event: ev.Type, ID: ev.Current.ID(), TargetID: ev.Target.ID(),
-		X: ev.X.Float(), Y: ev.Y.Float(), Key: ev.Key}
+		X: ev.X.Float(), Y: ev.Y.Float(), Key: ev.Key, Mods: ev.Mods}
 	h(c)
 	a.dirty.Store(true)
 	return c.stop

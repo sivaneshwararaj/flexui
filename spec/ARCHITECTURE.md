@@ -167,5 +167,15 @@ declaration strings. Each case is checked two ways:
 * Paint order and hit order share one traversal (`render.visitor`):
   `painter` draws, `hitter` records the last element containing the point
   inside all active clips.
+* Interaction (`internal/view`): `event.go` turns pointer/wheel/key input
+  into state changes and events; `state.go` holds element keys (id or
+  tree path, for focus and scroll across rebuilds), pseudo-class chains
+  (`setHover`/`setActive`/`setFocus` set `dom.Node.Dyn` and invalidate
+  style only if `Document.Pseudo` uses the flag), focus order, and
+  scrolling (offsets by key, applied in `Document.Place`).
+* `View.update` loops at most 3 times: a placement can change what is
+  under the pointer, which can change `:hover`, which can restyle.
 * Tests: `app_test.go` (counter goldens in `testdata/app`, bubbling,
-  caching counters via `view.Stats`).
+  caching counters via `view.Stats`), `interact_test.go` (hover, active,
+  focus, keyboard, scrolling goldens and behavior),
+  `internal/render/hit_test.go` (z-order cases, hit == paint property).

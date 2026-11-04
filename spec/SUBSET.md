@@ -611,6 +611,64 @@ Every element is positioned (D2), which simplifies CSS 2 Appendix E:
   incrementally is always byte-identical to a fresh render of the same
   HTML (tested).
 
+### 8.3 Hit testing
+
+* The element under a point is the **last element in paint order**
+  (§6.4: z-index, stacking contexts, tree order) whose border box contains
+  the point and which is not clipped there by an ancestor's `overflow`
+  (padding-box rectangle). Painting and hit testing use one traversal, so
+  they cannot disagree; `TestHitTestMatchesPaint` checks this pixel by
+  pixel on random overlapping documents.
+* Corner radii are ignored for hit testing (the border box rectangle
+  counts). Elements with `opacity: 0` or a transparent background are still
+  hit, as in browsers. Text hits its parent element. A box with negative
+  `z-index` whose stacking context is the canvas is under `body`, so
+  `body` is hit there (as in browsers).
+
+### 8.4 Pseudo-classes and focus
+
+* `:hover` applies to the element under the pointer and all its
+  ancestors; it is recomputed when the pointer moves, when content
+  scrolls or is re-laid-out under it, and cleared when the pointer leaves
+  the surface. `:active` applies to the pressed element and its ancestors
+  from press to release (or until a drag scroll starts), and to a button
+  held with Space.
+* **Focusable** elements: `button`, `a`, `input`, and any element with a
+  `tabindex` attribute, unless inside a `display: none` subtree. `:focus`
+  applies to the focused element only (no `:focus-within` /
+  `:focus-visible`). Pressing the pointer focuses the nearest focusable
+  element at or above the target; pressing elsewhere blurs.
+  `App.Focus(id)` focuses programmatically.
+* **Keyboard**: key events go to the focused element (or `body`) and
+  bubble (`onkeydown`, with `Ctx.Key` and `Ctx.Mods`). Unless a handler
+  calls `Ctx.PreventDefault()`: Tab / Shift+Tab move focus in sequential
+  focus order (positive `tabindex` ascending, then `tabindex="0"` and
+  naturally focusable elements in tree order; negative `tabindex` is
+  skipped; wraps around); Enter clicks a focused `button` or `a`; Space
+  clicks a focused `button` on release.
+* **D26**: there is no default focus ring (no UA style sheet): style
+  `:focus` in the app's CSS. `disabled` is not supported yet.
+
+### 8.5 Scroll containers
+
+* `overflow: scroll` makes an element a scroll container that the user
+  can scroll; `overflow: hidden` only clips (as in CSS). The scroll range
+  is the content extent (layout's scrollable overflow, measured from the
+  padding box) minus the padding box size.
+* **Wheel**: scrolls the innermost scroll container under the pointer;
+  what it cannot absorb passes to the next one outward (scroll chaining).
+  Deltas are logical pixels; positive scrolls down/right.
+* **Drag**: pressing over a scroll container and moving more than 4
+  logical px (in either axis) scrolls it with the pointer, like touch.
+  Such a press does not click, and `:active` ends when the drag starts.
+* Scrolling moves the descendants' boxes (painting, clipping and hit
+  testing all follow) without re-running layout. Offsets are clamped
+  after every layout.
+* Scroll offsets are kept across re-renders by element key (§8.2: `id`,
+  or tree position), and re-clamped to the new content.
+* **D25**: no scrollbars are drawn and none take space (like overlay
+  scrollbars). There is no keyboard scrolling and no inertia yet.
+
 ## 5. Verification
 
 Layout behavior is checked against Chromium:

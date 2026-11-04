@@ -316,6 +316,19 @@ type Cascade struct {
 	rules []Rule
 }
 
+// Pseudo returns the union of the pseudo-classes used anywhere in the
+// cascade's selectors, so callers can skip restyling for state changes
+// that no rule can observe.
+func (c *Cascade) Pseudo() State {
+	var u State
+	for i := range c.rules {
+		for _, p := range c.rules[i].Sel.Parts {
+			u |= p.Pseudo
+		}
+	}
+	return u
+}
+
 // NewCascade combines sheets, in order.
 func NewCascade(sheets ...*Sheet) *Cascade {
 	var c Cascade

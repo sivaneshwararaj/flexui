@@ -6,6 +6,13 @@ versioning with `v0.x` tags until the API settles.
 ## Unreleased
 
 ### Added
+- M6 interaction: hit testing in paint order, `:hover`/`:active`/`:focus`
+  styles, pointer and keyboard focus (Tab order with tabindex), Enter and
+  Space activation, `onkeydown` with `Ctx.PreventDefault`, `App.Focus`,
+  `App.FocusedID`, scroll containers with wheel (chaining) and drag
+  scrolling, `App.ScrollOffset`, focus and scroll kept across
+  re-renders; `platform.EventPointerLeave`; `headless.Session.Drag`,
+  `Leave`.
 - M5 handlers and state: `onclick` handlers bound with `App.Handle`,
   bubbling and `Ctx.StopPropagation`, `Ctx.Attr`/`ID`/`TargetID`,
   `App.Invalidate`, `App.Bounds`, re-render after handlers with staged

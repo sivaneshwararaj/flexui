@@ -32,6 +32,7 @@ const (
 	EventFocus
 	EventBlur
 	EventClose
+	EventPointerLeave // the pointer left the surface
 )
 
 // Event is a platform-independent input event. Coordinates are in logical
@@ -39,9 +40,9 @@ const (
 type Event struct {
 	Kind   EventKind
 	X, Y   float64 // pointer position
-	DX, DY float64 // wheel delta
+	DX, DY float64 // wheel delta in logical pixels; positive DY scrolls down
 	Button int
-	Key    string // key name for key events
+	Key    string // key name for key events: "Tab", "Enter", " ", "Escape", "a", ...
 	Text   string // committed text for EventText
 	Mods   uint8  // ModShift | ModCtrl | ModAlt | ModMeta
 	Width  int    // new size for EventResize

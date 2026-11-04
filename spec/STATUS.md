@@ -1,6 +1,6 @@
 # Status
 
-Last updated after M5. Next step: M6 (interaction).
+Last updated after M6. Next step: M7 (portability gate and macOS window).
 
 | Milestone | State |
 |---|---|
@@ -10,7 +10,7 @@ Last updated after M5. Next step: M6 (interaction).
 | M3 HTML+CSS to pixels | done (no images yet) |
 | M4 Text | done |
 | M5 Handlers and state | done |
-| M6 Interaction | not started |
+| M6 Interaction | done |
 | M7 Portability gate + macOS | portability script exists and passes; darwin not started |
 | M8 Text input | not started |
 | M9 Demo app | not started |
@@ -74,6 +74,15 @@ Last updated after M5. Next step: M6 (interaction).
   and shaped text are cached across rebuilds; idle frames copy the
   retained image (about 11 µs at 280x220), a click with re-render about
   1.1 ms. Hit testing follows paint order exactly (shared traversal).
+* Interaction (M6): hit testing in exact paint order (z-index, stacking
+  contexts, overflow clips; checked pixel-by-pixel against the painted
+  output on random documents), `:hover`/`:active`/`:focus` restyling only
+  when the document uses that pseudo-class, focus by pointer and
+  Tab/Shift+Tab (HTML tabindex order), Enter/Space activation,
+  `onkeydown` with `PreventDefault`, `App.Focus`/`FocusedID`, scroll
+  containers (`overflow: scroll`) with wheel (chaining) and drag
+  scrolling, clamping, and focus and scroll offsets kept across
+  re-renders by id or tree position (`App.ScrollOffset`).
 * `render`: dom → cascade → layout → display list in CSS paint order
   (stacking contexts from `z-index` and `opacity`, negative/zero/positive
   layers, `overflow` clips carried to out-of-order contexts) → raster,
@@ -131,8 +140,10 @@ Last updated after M5. Next step: M6 (interaction).
   hyphenation, no inline formatting across elements (§7.1).
 * `<img>`: an empty box with a warning; no image loading yet.
 * `<input>`, `<button>`, `<a>`: plain boxes (interaction in M5/M6/M8).
-* Pseudo-class state is supported by the cascade, but nothing sets it yet
-  (M6). Only `onclick` runs handlers (M6 adds keys).
+* Handlers: only `onclick` and `onkeydown`; no `oninput`/`onchange`
+  (M8), no `onfocus`/`onblur`, no `disabled`.
+* Scrolling: no scrollbars (D25), no keyboard scrolling, no inertia; no
+  scrolling of `body` itself unless it has `overflow: scroll`.
 
 ## Known limitations / bugs
 
@@ -154,3 +165,6 @@ Last updated after M5. Next step: M6 (interaction).
 * Rasterizer speed: the shadow blur dominates (about half of a card
   frame).
 * Glyph masks are cached per face (cleared at 32k entries).
+* A pseudo-class change restyles and re-lays-out the whole document (only
+  when some rule uses that pseudo-class); fine for app-sized documents,
+  but there is no per-subtree invalidation.

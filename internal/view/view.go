@@ -14,6 +14,7 @@ import (
 	"github.com/sivaneshwararaj/flexui/internal/geom"
 	"github.com/sivaneshwararaj/flexui/internal/paint"
 	"github.com/sivaneshwararaj/flexui/internal/render"
+	"github.com/sivaneshwararaj/flexui/internal/style"
 )
 
 // Stats counts the work done, for tests and tuning.
@@ -46,15 +47,27 @@ type View struct {
 	raster paint.Raster
 
 	// Pointer state.
-	down    *dom.Node // element under the pointer at pointer down
-	downAt  geom.Point
-	pressed bool
-	stats   Stats
+	down       *dom.Node // element under the pointer at pointer down
+	downAt     geom.Point
+	pressed    bool
+	pointer    geom.Point // last known pointer position
+	hasPointer bool
+	dragging   *dom.Node // scroll container being dragged, if any
+	dragLast   geom.Point
+
+	// Interaction state (spec/SUBSET.md §8.3-8.5).
+	hover, active, focus *dom.Node
+	focusKey             string // key of the focused element, kept across rebuilds
+	hoverStale           bool   // hover must be recomputed after the next placement
+	space                *dom.Node
+	scroll               map[string]geom.Point // scroll offsets by element key
+
+	stats Stats
 }
 
 // New returns an empty view.
 func New() *View {
-	return &View{cache: render.NewCache(), needStyle: true}
+	return &View{cache: render.NewCache(), needStyle: true, scroll: map[string]geom.Point{}}
 }
 
 // SetSource sets the HTML and CSS of the view. Unchanged strings cost
@@ -87,27 +100,74 @@ func (v *View) Warnings() []string {
 
 // update brings the document up to date for a w x h viewport.
 func (v *View) update(w, h int) {
-	if v.parsed == nil {
-		v.stats.Parses++
-		v.parsed = render.Parse(v.html)
-		v.needStyle = true
-	}
-	if v.needStyle {
-		v.doc = v.cache.Style(v.parsed, v.css)
-		v.needStyle, v.needLayout = false, true
-	}
-	if v.needLayout || w != v.w || h != v.h {
-		v.w, v.h = w, h
-		v.doc.Layout(w, h)
-		v.needLayout, v.needPlace = false, true
-	}
-	if v.needPlace {
-		v.place()
-		v.needPlace, v.needPaint = false, true
+	for pass := 0; pass < 3; pass++ {
+		if v.parsed == nil {
+			v.stats.Parses++
+			v.parsed = render.Parse(v.html)
+			v.rebind()
+			v.needStyle = true
+		}
+		if v.needStyle {
+			v.doc = v.cache.Style(v.parsed, v.css)
+			v.needStyle, v.needLayout = false, true
+		}
+		if v.needLayout || w != v.w || h != v.h {
+			v.w, v.h = w, h
+			v.doc.Layout(w, h)
+			v.needLayout, v.needPlace = false, true
+		}
+		if v.needPlace {
+			v.place()
+			v.needPlace, v.needPaint = false, true
+			v.hoverStale = true
+		}
+		// What is under the pointer may have changed: update :hover, and
+		// restyle if a rule depends on it.
+		if v.hoverStale && v.hasPointer {
+			v.hoverStale = false
+			v.setHover(v.hitDoc(v.pointer.X, v.pointer.Y))
+			if v.needStyle {
+				continue
+			}
+		}
+		return
 	}
 }
 
-func (v *View) place() { v.doc.Place(nil) }
+// rebind carries interaction state over to a freshly parsed document:
+// focus by element key; active and hover are recomputed from input.
+func (v *View) rebind() {
+	v.hover, v.active, v.down, v.space, v.dragging = nil, nil, nil, nil, nil
+	v.pressed = false
+	v.focus = nil
+	if v.focusKey != "" {
+		if n := findKey(v.parsed.Dom.Root, v.focusKey); n != nil {
+			v.focus = n
+			n.Dyn |= style.StateFocus
+		} else {
+			v.focusKey = ""
+		}
+	}
+	v.hoverStale = true
+}
+
+func (v *View) place() {
+	v.doc.Place(func(b *render.Box) geom.Point {
+		if b.Style.Overflow != style.OverflowScroll {
+			return geom.Point{}
+		}
+		k := key(b.El)
+		o, ok := v.scroll[k]
+		if !ok {
+			return o
+		}
+		c := clampScroll(b, o)
+		if c != o {
+			v.scroll[k] = c
+		}
+		return c
+	})
+}
 
 // Frame renders the view into buf (w x h logical pixels at scale).
 // Stages whose inputs did not change are skipped; if nothing changed, the
@@ -152,13 +212,17 @@ func (v *View) Bounds(id string) (geom.Rect, bool) {
 	return b.Abs, true
 }
 
-// hit returns the element under (x, y), or nil.
+// hit returns the element under (x, y) in the up-to-date document, or nil.
 func (v *View) hit(x, y geom.Unit) *dom.Node {
-	d := v.Document()
-	if d == nil {
+	if v.Document() == nil {
 		return nil
 	}
-	if b := d.HitTest(x, y); b != nil {
+	return v.hitDoc(x, y)
+}
+
+// hitDoc hit-tests the current document without updating it.
+func (v *View) hitDoc(x, y geom.Unit) *dom.Node {
+	if b := v.doc.HitTest(x, y); b != nil {
 		return b.El
 	}
 	return nil
