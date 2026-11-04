@@ -14,23 +14,34 @@ events <──platform── hit test / focus / handlers (app) ──> state ─
 
 ## Packages
 
+Public API (keep small, documented, semver `v0.x`):
+
+| Package | Role |
+|---|---|
+| `flexui` (repo root) | `App`, `Options`, `Ctx`, `Handler`: `New`, `SetView`, `SetViewFunc`, `Handle`, `Config`; implements `platform.AppHandler`. |
+| `platform` | `Platform` / `AppHandler` / `Event` / `Clipboard` interfaces. |
+| `platform/headless` | Reference backend for tests; `Render(app, "out.png")`, `RenderImage`. |
+
+Implementation (`internal/`, free to change):
+
 | Package | Role | Depends on |
 |---|---|---|
-| `geom` | `Unit` (fixed-point 1/64 px), `Rect`, `Size`, `Edges`, 128-bit `MulDiv`. | stdlib |
-| `style` | Computed `Style`, value types, declaration parser for the subset, warnings. Selectors/cascade in M3. | `geom` |
-| `layout` | Flexbox engine. Input: tree of `*layout.Node` (style + children + optional measure func). Output: `Node.Box`. | `geom`, `style` |
-| `dom` | HTML → node tree (M3). | `golang.org/x/net/html` |
-| `paint` | Display list + software rasterizer (M2). | `geom` |
-| `text` | Font, shaping, line breaking (M4). | `go-text/typesetting` |
-| `app` | Handlers, state, re-render loop, events (M5). | all core |
-| `platform` | `Platform` / `AppHandler` interfaces. | stdlib |
-| `platform/headless` | Reference platform for tests. | `platform` |
+| `internal/geom` | `Unit` (fixed-point 1/64 px), `Rect`, `Size`, `Edges`, 128-bit `MulDiv`. | stdlib |
+| `internal/style` | Computed `Style`, value types, declaration parser, warnings. Selectors/cascade in M3. | `geom` |
+| `internal/layout` | Flexbox engine. Input: tree of `*layout.Node`. Output: `Node.Box`. | `geom`, `style` |
+| `internal/paint` | `Canvas` draw interface, display list, fixed-point software rasterizer (M2). | `geom` |
+| `internal/dom` | HTML → node tree (M3). | `golang.org/x/net/html` |
+| `internal/text` | Font, shaping, line breaking (M4). | `go-text/typesetting` |
 
-Rule: core packages (`geom style layout dom paint text app`) never import
-`platform/*` or OS-specific packages. `scripts/check-portability.sh`
-enforces this.
+`examples/` is a separate module (`replace` to `../`) that uses only the
+public API, proving the library works for an external consumer.
 
-## Layout engine (`layout/`)
+Rule: the root package and `internal/...` never import `platform/<os>`
+or OS-specific packages; backends depend on the interfaces, never the
+reverse. `scripts/check-portability.sh` enforces this and builds both
+modules for 5 targets with `CGO_ENABLED=0`.
+
+## Layout engine (`internal/layout/`)
 
 * `layout.go`: public API (`Node`, `Box`, `Layout(root, w, h)`), the
   `compute` dispatcher with a small per-node cache, and leaf sizing.
@@ -68,7 +79,7 @@ enforces this.
 
 ### Testing layout
 
-`layout/cases_test.go` holds table-driven cases written with CSS
+`internal/layout/cases_test.go` holds table-driven cases written with CSS
 declaration strings. Each case is checked two ways:
 
 1. Hand-written `want` rectangles for key elements (where given).

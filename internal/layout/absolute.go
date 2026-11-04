@@ -1,8 +1,8 @@
 package layout
 
 import (
-	"github.com/sivaneshwararaj/flexui/geom"
-	"github.com/sivaneshwararaj/flexui/style"
+	"github.com/sivaneshwararaj/flexui/internal/geom"
+	"github.com/sivaneshwararaj/flexui/internal/style"
 )
 
 // layoutAbsolute positions an absolutely positioned child of n

@@ -214,7 +214,7 @@ Inheritance: only text properties (`color`, `font-*`, `line-height`,
 ## 5. Verification
 
 Layout behavior is checked against Chromium. `make crosscheck` renders every
-layout test case (`layout/cases_test.go`) as HTML in headless Chromium,
+layout test case (`internal/layout/cases_test.go`) as HTML in headless Chromium,
 using a base style sheet that encodes D1-D4. It writes the measured
 rectangles to `testdata/layout/chrome.json`. `go test ./layout` compares the
 engine against that file (tolerance 1/64 px) without needing a browser.

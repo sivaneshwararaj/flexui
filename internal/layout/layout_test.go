@@ -3,8 +3,8 @@ package layout
 import (
 	"testing"
 
-	"github.com/sivaneshwararaj/flexui/geom"
-	"github.com/sivaneshwararaj/flexui/style"
+	"github.com/sivaneshwararaj/flexui/internal/geom"
+	"github.com/sivaneshwararaj/flexui/internal/style"
 )
 
 // Re-running layout on the same tree must give identical results (the

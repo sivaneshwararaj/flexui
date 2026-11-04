@@ -1,6 +1,6 @@
 package style
 
-import "github.com/sivaneshwararaj/flexui/geom"
+import "github.com/sivaneshwararaj/flexui/internal/geom"
 
 // Factor is a flex-grow / flex-shrink factor in 1/1000 units (1000 == 1).
 type Factor int64

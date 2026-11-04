@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sivaneshwararaj/flexui/geom"
-	"github.com/sivaneshwararaj/flexui/style"
+	"github.com/sivaneshwararaj/flexui/internal/geom"
+	"github.com/sivaneshwararaj/flexui/internal/style"
 )
 
 // Test trees are described with CSS declaration strings so that the same
@@ -129,7 +129,7 @@ func closeRect(a, b rect) bool {
 }
 
 func loadChrome(t *testing.T) map[string]map[string]rect {
-	data, err := os.ReadFile(filepath.Join("..", "testdata", "layout", "chrome.json"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "layout", "chrome.json"))
 	if err != nil {
 		t.Logf("no chrome.json (%v); run `make crosscheck`", err)
 		return nil
