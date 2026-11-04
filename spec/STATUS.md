@@ -1,6 +1,6 @@
 # Status
 
-Last updated after the first macOS run (stages 1-5, 7 pass). Next steps: Windows stage results, IME composition (rest of M8).
+Last updated after the macOS run (stages 1-7 pass). Next steps: Windows stage results, IME composition (rest of M8).
 
 | Milestone | State |
 |---|---|
