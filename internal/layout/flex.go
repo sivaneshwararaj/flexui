@@ -1,8 +1,8 @@
 package layout
 
 import (
-	"github.com/sivaneshwararaj/flexui/geom"
-	"github.com/sivaneshwararaj/flexui/style"
+	"github.com/sivaneshwararaj/flexui/internal/geom"
+	"github.com/sivaneshwararaj/flexui/internal/style"
 )
 
 type flexItem struct {
@@ -19,13 +19,15 @@ type flexItem struct {
 	mS, mE, cS, cE     geom.Unit
 	aMS, aME, aCS, aCE bool
 
-	base       geom.Unit // flex base size (border box)
-	hypo       geom.Unit // hypothetical main size
-	minMain    geom.Unit // used min main size (incl. automatic minimum)
-	minContrib geom.Unit // min-content contribution (border box)
-	target     geom.Unit // resolved main size
-	frozen     bool
-	viol       geom.Unit
+	base          geom.Unit // flex base size (border box)
+	hypo          geom.Unit // hypothetical main size
+	minMain       geom.Unit // used min main size (incl. automatic minimum)
+	minContrib    geom.Unit // min-content contribution (border box)
+	maxContrib    geom.Unit // max-content contribution (border box)
+	basisDefinite bool      // flex-basis is a definite length
+	target        geom.Unit // resolved main size
+	frozen        bool
+	viol          geom.Unit
 
 	mainDefinite  bool // post-flex main size is definite (§9.8)
 	crossDefinite bool // used cross size is definite
@@ -37,6 +39,26 @@ type flexItem struct {
 
 func (it *flexItem) outerHypo() geom.Unit   { return it.hypo + it.mS + it.mE }
 func (it *flexItem) outerTarget() geom.Unit { return it.target + it.mS + it.mE }
+
+// stretches reports whether align-self: stretch applies: only when the
+// cross size property is literally auto (an unresolvable percentage is not
+// auto) and neither cross margin is auto.
+func (it *flexItem) stretches(c int) bool {
+	cs := it.n.Style
+	size := cs.Width
+	if c == 1 {
+		size = cs.Height
+	}
+	return it.align == style.AlignStretch && size.IsAuto() && !it.aCS && !it.aCE
+}
+
+func (it *flexItem) inflexible(c geom.Unit) geom.Unit {
+	if (c > it.hypo && it.grow == 0) || (c < it.hypo && it.shrink == 0) {
+		return it.hypo
+	}
+	return c
+}
+
 func (it *flexItem) clampMain(m int, v geom.Unit) geom.Unit {
 	if it.b.max[m].OK && v > it.b.max[m].V {
 		v = it.b.max[m].V
@@ -62,6 +84,10 @@ func (n *Node) flex(in input) geom.Size {
 		m, c = 0, 1
 	}
 	wrap := st.FlexWrap != style.NoWrap
+	// Browsers size a column-wrap container's min-content width as if it
+	// did not wrap (the widest item); line breaking is skipped for that
+	// measurement.
+	breakLines := wrap && !(!row && in.avail[0].Kind == MinContent)
 
 	// §9.2: available space and the container's own definite sizes.
 	// inner: content-box size once known. pct: content-box size if it is
@@ -70,19 +96,31 @@ func (n *Node) flex(in input) geom.Size {
 	if in.wantW && size[0].OK {
 		return geom.Size{W: size[0].V}
 	}
-	if !row && !size[0].OK && !in.ignoreSize[0] && in.avail[0].Kind == Definite {
-		// A column container's height depends on its width, so resolve
-		// the fit-content width first:
-		// max(min-content, min(max-content, available)).
-		probe := in
-		probe.perform, probe.wantW = false, true
-		probe.avail[0] = Avail{Kind: MaxContent}
-		maxc := n.compute(probe).W
-		probe.avail[0] = Avail{Kind: MinContent}
-		minc := n.compute(probe).W
-		size[0] = some(b.clamp(0, geom.Max(minc, geom.Min(maxc, in.avail[0].V))))
-		if in.wantW {
-			return geom.Size{W: size[0].V}
+	// Width first: heights depend on widths, and horizontal percentages
+	// resolve against the final width. So when the width is not known,
+	// determine it with a (cheap, cached) width-only query, then lay out
+	// at that width.
+	if !size[0].OK && !in.ignoreSize[0] {
+		switch {
+		case !row && in.avail[0].Kind == Definite:
+			// Column container: fit-content,
+			// max(min-content, min(max-content, available)).
+			probe := in
+			probe.perform, probe.wantW = false, true
+			probe.avail[0] = Avail{Kind: MaxContent}
+			maxc := n.compute(probe).W
+			probe.avail[0] = Avail{Kind: MinContent}
+			minc := n.compute(probe).W
+			size[0] = some(b.clamp(0, geom.Max(minc, geom.Min(maxc, in.avail[0].V))))
+			definite[0] = true
+			if in.wantW {
+				return geom.Size{W: size[0].V}
+			}
+		case row && !in.wantW:
+			probe := in
+			probe.perform, probe.wantW = false, true
+			size[0] = some(n.compute(probe).W)
+			definite[0] = true
 		}
 	}
 	var inner, pct [2]Opt
@@ -114,7 +152,7 @@ func (n *Node) flex(in input) geom.Size {
 	for _, ch := range n.Children {
 		switch {
 		case ch.Style.Display == style.DisplayNone:
-			ch.Box = Box{}
+			zeroBoxes(ch)
 		case ch.Style.Position == style.PositionAbsolute:
 			abs = append(abs, ch)
 		default:
@@ -125,27 +163,22 @@ func (n *Node) flex(in input) geom.Size {
 	// §9.2.4: container main size, if it is not definite.
 	if !inner[m].OK {
 		var v geom.Unit
-		kind := avail[m].Kind
-		if !row {
+		if row {
+			// Inline axis: fit-content from the items' min-/max-content
+			// contributions (as browsers do; flex base sizes are not used).
+			maxc := maxContentMain(items, gapMain)
+			minc := minContentMain(items, gapMain, wrap)
+			switch avail[m].Kind {
+			case MaxContent:
+				v = maxc
+			case MinContent:
+				v = minc
+			default:
+				v = geom.Max(minc, geom.Min(maxc, avail[m].V))
+			}
+		} else {
 			// Block axis: an auto height is the content height.
-			kind = MaxContent
-		}
-		switch kind {
-		case MaxContent:
-			limit := infinite
-			if !row && b.max[m].OK {
-				limit = geom.Max(0, b.max[m].V-b.pb[m])
-			}
-			v = longestLine(items, gapMain, wrap, limit)
-		case MinContent:
-			v = minContentMain(items, gapMain, wrap)
-		case Definite:
-			if wrap {
-				v = longestLine(items, gapMain, true, avail[m].V)
-			} else {
-				v = geom.Min(longestLine(items, gapMain, false, 0), avail[m].V)
-			}
-			v = geom.Max(v, minContentMain(items, gapMain, wrap))
+			v = longestLine(items, gapMain, wrap, colLimit(&b, size, definite, m))
 		}
 		v = b.clampIf(m, v+b.pb[m], in) - b.pb[m]
 		inner[m] = some(v)
@@ -157,7 +190,11 @@ func (n *Node) flex(in input) geom.Size {
 	innerMain := inner[m].V
 
 	// §9.3: collect items into lines.
-	lines := collectLines(items, innerMain, gapMain, wrap)
+	limit := innerMain
+	if !row {
+		limit = colLimit(&b, size, definite, m)
+	}
+	lines := collectLines(items, limit, gapMain, breakLines)
 
 	// §9.7: resolve flexible lengths.
 	for _, ln := range lines {
@@ -189,6 +226,23 @@ func (n *Node) flex(in input) geom.Size {
 			ln.cross = geom.Max(ln.cross, it.hypoCross+it.cS+it.cE)
 		}
 	}
+	if wrap && !row {
+		// Browsers re-fit non-stretched items of a column-wrap container
+		// to their line: fit-content within the line's cross size.
+		for _, ln := range lines {
+			for i := ln.start; i < ln.end; i++ {
+				it := &items[i]
+				if it.b.size[c].OK || it.stretches(c) {
+					continue
+				}
+				var av [2]Avail
+				av[0] = Avail{Definite, geom.Max(0, ln.cross-it.cS-it.cE)}
+				av[1] = Avail{Kind: MaxContent}
+				w := it.n.compute(input{parent: pct, avail: av, wantW: true}).W
+				it.hypoCross = it.b.clamp(c, w)
+			}
+		}
+	}
 	if !wrap && inner[c].OK && len(lines) == 1 {
 		lines[0].cross = inner[c].V
 	}
@@ -215,11 +269,9 @@ func (n *Node) flex(in input) geom.Size {
 		mode := distStart
 		if st.AlignContent == style.ContentStretch {
 			if free > 0 {
-				prev := geom.Unit(0)
+				step := free / geom.Unit(len(lines))
 				for li := range lines {
-					now := part(free, int64(li+1), int64(len(lines)))
-					lines[li].cross += now - prev
-					prev = now
+					lines[li].cross += step
 				}
 			}
 		} else {
@@ -227,7 +279,7 @@ func (n *Node) flex(in input) geom.Size {
 		}
 		pos := geom.Unit(0)
 		for li := range lines {
-			lines[li].offset = pos + spaceBefore(mode, free, li, len(lines))
+			lines[li].offset = pos + spaceBefore(mode, free, li, len(lines), st.FlexWrap == style.WrapReverse)
 			pos += lines[li].cross + gapCross
 		}
 	}
@@ -238,9 +290,11 @@ func (n *Node) flex(in input) geom.Size {
 			it := &items[i]
 			it.cross = it.hypoCross
 			it.crossDefinite = it.b.size[c].OK
-			if it.align == style.AlignStretch && !it.b.size[c].OK && !it.aCS && !it.aCE {
+			if it.stretches(c) {
 				it.cross = it.b.clamp(c, ln.cross-it.cS-it.cE)
-				it.crossDefinite = pct[c].OK
+				// §9.8 rule 3: once line cross sizes are known, stretched
+				// items count as definite, even in auto-sized containers.
+				it.crossDefinite = true
 			}
 			free := ln.cross - it.cross - it.cS - it.cE
 			var off geom.Unit
@@ -268,7 +322,7 @@ func (n *Node) flex(in input) geom.Size {
 
 	// §9.5 main-axis alignment.
 	for _, ln := range lines {
-		justifyLine(items[ln.start:ln.end], innerMain, gapMain, st.JustifyContent)
+		justifyLine(items[ln.start:ln.end], innerMain, gapMain, st.JustifyContent, st.FlexDirection.IsReverse())
 	}
 
 	out := geom.Size{W: size[0].V, H: size[1].V}
@@ -322,6 +376,22 @@ func (n *Node) flex(in input) geom.Size {
 	return out
 }
 
+// colLimit is where a column-wrap container breaks lines: its definite
+// height, else its specified height (even while its content size is being
+// measured) or max-height, else nowhere. A height that merely came from
+// content does not break lines (as in browsers).
+func colLimit(b *boxStyle, size [2]Opt, definite [2]bool, m int) geom.Unit {
+	switch {
+	case size[m].OK && definite[m]:
+		return geom.Max(0, size[m].V-b.pb[m])
+	case b.size[m].OK:
+		return geom.Max(0, b.clamp(m, b.size[m].V)-b.pb[m])
+	case b.max[m].OK:
+		return geom.Max(0, b.max[m].V-b.pb[m])
+	}
+	return infinite
+}
+
 // columnWidth is the width of a single-line column container whose width
 // is not known: the widest outer item width (the line's cross size). It
 // is equivalent to the full algorithm but skips all height computations.
@@ -354,8 +424,11 @@ func (n *Node) newItem(ch *Node, m, c int, wrap bool, inner, pct [2]Opt, avail [
 	cs := ch.Style
 	it := flexItem{n: ch, b: resolveBox(cs, pct)}
 	// §9.8: the flexed main size is definite if the container's main size
-	// is (or the item has a definite size of its own).
-	it.mainDefinite = pct[m].OK || it.b.size[m].OK
+	// is, or the item has a definite size or a definite flex basis of its
+	// own (the latter as browsers do).
+	_, basisDef := cs.FlexBasis.Resolve(pct[m].V, pct[m].OK)
+	it.basisDefinite = basisDef
+	it.mainDefinite = pct[m].OK || basisDef || (cs.FlexBasis.IsAuto() && it.b.size[m].OK)
 	it.align = cs.AlignSelf
 	if it.align == style.AlignAuto {
 		it.align = st.AlignItems
@@ -382,7 +455,7 @@ func (n *Node) newItem(ch *Node, m, c int, wrap bool, inner, pct [2]Opt, avail [
 	crossDef := false
 	if it.b.size[c].OK {
 		crossKnown, crossDef = some(it.b.clamp(c, it.b.size[c].V)), true
-	} else if it.align == style.AlignStretch && !wrap && inner[c].OK && !it.aCS && !it.aCE {
+	} else if it.stretches(c) && !wrap && inner[c].OK {
 		crossKnown, crossDef = some(it.b.clamp(c, inner[c].V-it.cS-it.cE)), pct[c].OK
 	}
 	crossAvail := shrinkBy(avail[c], it.cS+it.cE)
@@ -403,6 +476,7 @@ func (n *Node) newItem(ch *Node, m, c int, wrap bool, inner, pct [2]Opt, avail [
 	}
 
 	// Flex base size.
+	maxContent := geom.Unit(-1)
 	pbMain := it.b.pb[m]
 	if v, ok := cs.FlexBasis.Resolve(pct[m].V, pct[m].OK); ok {
 		if cs.BoxSizing == style.ContentBox {
@@ -413,7 +487,8 @@ func (n *Node) newItem(ch *Node, m, c int, wrap bool, inner, pct [2]Opt, avail [
 		// flex-basis: auto uses the main size property.
 		it.base = it.b.size[m].V
 	} else {
-		it.base = measure(MaxContent)
+		maxContent = measure(MaxContent)
+		it.base = maxContent
 	}
 	it.base = geom.Max(it.base, pbMain)
 
@@ -436,7 +511,27 @@ func (n *Node) newItem(ch *Node, m, c int, wrap bool, inner, pct [2]Opt, avail [
 		it.minMain = geom.Max(it.minMain, auto)
 	}
 	it.hypo = it.clampMain(m, it.base)
-	it.minContrib = it.clampMain(m, minContent)
+	// Contributions: the preferred size if definite, else the min-/max-
+	// content size, clamped by min/max. Only needed to size the container.
+	if !inner[m].OK {
+		if it.b.size[m].OK {
+			it.minContrib = it.clampMain(m, it.b.size[m].V)
+			it.maxContrib = it.minContrib
+		} else {
+			it.minContrib = it.clampMain(m, minContent)
+			if maxContent < 0 {
+				maxContent = measure(MaxContent)
+			}
+			it.maxContrib = it.clampMain(m, maxContent)
+		}
+		// With an explicit flex-basis, an item that cannot grow does not
+		// contribute more than its hypothetical main size, and one that
+		// cannot shrink not less (matches Chromium; not CSS §9.9.1).
+		if it.basisDefinite && !wrap {
+			it.minContrib = it.inflexible(it.minContrib)
+			it.maxContrib = it.inflexible(it.maxContrib)
+		}
+	}
 	return it
 }
 
@@ -474,7 +569,22 @@ func longestLine(items []flexItem, gap geom.Unit, wrap bool, limit geom.Unit) ge
 	return geom.Max(best, cur)
 }
 
-// minContentMain returns the container's min-content inner main size.
+// maxContentMain returns the max-content inner main size of a row
+// container with all items on one line: the sum of the items' max-content
+// contributions (see newItem for how flex-basis adjusts them).
+func maxContentMain(items []flexItem, gap geom.Unit) geom.Unit {
+	var v geom.Unit
+	for i := range items {
+		if i > 0 {
+			v += gap
+		}
+		v += items[i].maxContrib + items[i].mS + items[i].mE
+	}
+	return v
+}
+
+// minContentMain returns the container's min-content inner main size: the
+// sum of min-content contributions (largest one if the container wraps).
 func minContentMain(items []flexItem, gap geom.Unit, wrap bool) geom.Unit {
 	var v geom.Unit
 	for i := range items {
@@ -633,7 +743,7 @@ func abs(v geom.Unit) geom.Unit {
 
 // justifyLine resolves main-axis auto margins and justify-content (§9.5),
 // setting mainPos (forward coordinates) for each item.
-func justifyLine(items []flexItem, innerMain, gap geom.Unit, j style.Justify) {
+func justifyLine(items []flexItem, innerMain, gap geom.Unit, j style.Justify, reverse bool) {
 	if len(items) == 0 {
 		return
 	}
@@ -669,10 +779,33 @@ func justifyLine(items []flexItem, innerMain, gap geom.Unit, j style.Justify) {
 		free = 0
 	}
 	mode := justifyMode(j)
+	if !reverse {
+		pos := geom.Unit(0)
+		for i := range items {
+			it := &items[i]
+			it.mainPos = pos + spaceBefore(mode, free, i, len(items), false) + it.mS
+			pos += it.outerTarget() + gap
+		}
+		return
+	}
+	// Reversed: browsers place items in physical order (last item first),
+	// so truncation remainders end up at the physical end. Compute
+	// physical positions, then convert back to forward coordinates (the
+	// caller mirrors them).
+	switch {
+	case mode == distBetween && (free < 0 || len(items) < 2):
+		mode = distEnd // flex-start = physical end
+	case free < 0 && (mode == distAround || mode == distEvenly):
+		mode = distStart // safe fallback: writing-mode start
+	default:
+		mode = flipMode(mode)
+	}
 	pos := geom.Unit(0)
-	for i := range items {
-		it := &items[i]
-		it.mainPos = pos + spaceBefore(mode, free, i, len(items)) + it.mS
+	n := len(items)
+	for j := 0; j < n; j++ {
+		it := &items[n-1-j]
+		phys := pos + spaceBefore(mode, free, j, n, false) + it.mE
+		it.mainPos = innerMain - phys - it.target
 		pos += it.outerTarget() + gap
 	}
 }
@@ -721,31 +854,42 @@ func contentMode(a style.AlignContent) distMode {
 }
 
 // spaceBefore returns the total extra space placed before item i of n
-// when distributing free space with the given mode.
-func spaceBefore(mode distMode, free geom.Unit, i, n int) geom.Unit {
+// when distributing free space with the given mode. Steps are truncated
+// per gap, as browsers do (the remainder stays at the end). reverse says
+// that main-start is the physical end (row-reverse/column-reverse, or
+// wrap-reverse for lines).
+func spaceBefore(mode distMode, free geom.Unit, i, n int, reverse bool) geom.Unit {
 	if free < 0 {
-		// Fallbacks on overflow, matching browsers (CSS Box Alignment:
-		// space-between -> flex-start, space-around/evenly -> safe center,
-		// i.e. start when overflowing).
+		// Overflow fallbacks (CSS Box Alignment): space-between ->
+		// flex-start; space-around/evenly -> safe center, i.e. the
+		// writing-mode start, which is flex-end in a reversed container.
 		switch mode {
-		case distBetween, distAround, distEvenly:
+		case distBetween:
 			mode = distStart
+		case distAround, distEvenly:
+			mode = distStart
+			if reverse {
+				mode = distEnd
+			}
 		}
 	}
+	k := geom.Unit(i)
 	switch mode {
 	case distEnd:
 		return free
 	case distCenter:
-		return part(free, 1, 2)
+		return free / 2
 	case distBetween:
 		if n < 2 {
 			return 0
 		}
-		return part(free, int64(i), int64(n-1))
+		return k * (free / geom.Unit(n-1))
 	case distAround:
-		return part(free, int64(2*i+1), int64(2*n))
+		step := free / geom.Unit(n)
+		return step/2 + k*step
 	case distEvenly:
-		return part(free, int64(i+1), int64(n+1))
+		step := free / geom.Unit(n+1)
+		return step + k*step
 	}
 	return 0
 }
@@ -774,4 +918,12 @@ func (n *Node) contentExtent(b *boxStyle, size geom.Size) {
 		cw, ch = geom.Max(cw, ex), geom.Max(ch, ey)
 	}
 	n.Box.ContentW, n.Box.ContentH = cw, ch
+}
+
+// zeroBoxes clears the boxes of a display:none subtree.
+func zeroBoxes(n *Node) {
+	n.Box = Box{}
+	for _, c := range n.Children {
+		zeroBoxes(c)
+	}
 }

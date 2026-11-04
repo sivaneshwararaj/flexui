@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sivaneshwararaj/flexui/geom"
+	"github.com/sivaneshwararaj/flexui/internal/geom"
 )
 
 func parse(t *testing.T, css string) (Style, []Warning) {

@@ -6,7 +6,7 @@
 // arrive in M3.
 package style
 
-import "github.com/sivaneshwararaj/flexui/geom"
+import "github.com/sivaneshwararaj/flexui/internal/geom"
 
 // LengthKind says how a Length is interpreted.
 type LengthKind uint8

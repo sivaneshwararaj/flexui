@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sivaneshwararaj/flexui/geom"
+	"github.com/sivaneshwararaj/flexui/internal/geom"
 )
 
 // Declaration is one `property: value` pair.

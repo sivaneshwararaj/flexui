@@ -5,6 +5,8 @@ package headless
 
 import (
 	"image"
+	"image/png"
+	"os"
 
 	"github.com/sivaneshwararaj/flexui/platform"
 )
@@ -53,3 +55,36 @@ func (p *Platform) ReadText() (string, error) { return p.clip, nil }
 
 // WriteText implements platform.Clipboard with an in-memory clipboard.
 func (p *Platform) WriteText(s string) error { p.clip = s; return nil }
+
+// App is what Render needs: something that draws frames and knows its
+// preferred configuration (*flexui.App satisfies it).
+type App interface {
+	platform.AppHandler
+	Config() platform.Config
+}
+
+// RenderImage renders one frame of app at its configured size.
+func RenderImage(app App) (*image.RGBA, error) {
+	var p Platform
+	if err := p.Run(app.Config(), app); err != nil {
+		return nil, err
+	}
+	return p.Last, nil
+}
+
+// Render renders one frame of app and writes it to path as a PNG.
+func Render(app App, path string) error {
+	img, err := RenderImage(app)
+	if err != nil {
+		return err
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	if err := png.Encode(f, img); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
