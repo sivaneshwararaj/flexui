@@ -88,3 +88,95 @@ func Render(app App, path string) error {
 	}
 	return f.Close()
 }
+
+// Session drives an app step by step for tests: every input method
+// delivers one event and renders a frame, like a real platform's loop.
+type Session struct {
+	app   App
+	w, h  int
+	scale float64
+	frame *image.RGBA
+}
+
+// Start renders the first frame of app at its configured size.
+func Start(app App) *Session {
+	cfg := app.Config()
+	s := &Session{app: app, w: cfg.Width, h: cfg.Height, scale: cfg.Scale}
+	if s.scale == 0 {
+		s.scale = 1
+	}
+	s.render()
+	return s
+}
+
+func (s *Session) render() {
+	pw, ph := int(float64(s.w)*s.scale+0.5), int(float64(s.h)*s.scale+0.5)
+	if s.frame == nil || s.frame.Rect.Dx() != pw || s.frame.Rect.Dy() != ph {
+		s.frame = image.NewRGBA(image.Rect(0, 0, pw, ph))
+	}
+	s.app.Frame(s.frame, s.w, s.h, s.scale)
+}
+
+// Send delivers one event and renders a frame.
+func (s *Session) Send(e platform.Event) {
+	if e.Kind == platform.EventResize {
+		s.w, s.h = e.Width, e.Height
+	}
+	s.app.Event(e)
+	s.render()
+}
+
+// Move moves the pointer to (x, y) in logical pixels.
+func (s *Session) Move(x, y float64) {
+	s.Send(platform.Event{Kind: platform.EventPointerMove, X: x, Y: y})
+}
+
+// Press presses the primary button at (x, y).
+func (s *Session) Press(x, y float64) {
+	s.Send(platform.Event{Kind: platform.EventPointerDown, X: x, Y: y})
+}
+
+// Release releases the primary button at (x, y).
+func (s *Session) Release(x, y float64) {
+	s.Send(platform.Event{Kind: platform.EventPointerUp, X: x, Y: y})
+}
+
+// Click moves to (x, y), presses and releases there.
+func (s *Session) Click(x, y float64) {
+	s.Move(x, y)
+	s.Press(x, y)
+	s.Release(x, y)
+}
+
+// Wheel scrolls by (dx, dy) logical pixels at (x, y).
+func (s *Session) Wheel(x, y, dx, dy float64) {
+	s.Send(platform.Event{Kind: platform.EventWheel, X: x, Y: y, DX: dx, DY: dy})
+}
+
+// Key presses and releases a key ("Tab", "Enter", " ", ...) with the given
+// modifiers.
+func (s *Session) Key(key string, mods uint8) {
+	s.Send(platform.Event{Kind: platform.EventKeyDown, Key: key, Mods: mods})
+	s.Send(platform.Event{Kind: platform.EventKeyUp, Key: key, Mods: mods})
+}
+
+// Resize changes the surface size.
+func (s *Session) Resize(w, h int) {
+	s.Send(platform.Event{Kind: platform.EventResize, Width: w, Height: h})
+}
+
+// Frame returns the latest frame. It is overwritten by the next event.
+func (s *Session) Frame() *image.RGBA { return s.frame }
+
+// Save writes the latest frame to path as a PNG.
+func (s *Session) Save(path string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	if err := png.Encode(f, s.frame); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}

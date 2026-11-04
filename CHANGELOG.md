@@ -6,6 +6,12 @@ versioning with `v0.x` tags until the API settles.
 ## Unreleased
 
 ### Added
+- M5 handlers and state: `onclick` handlers bound with `App.Handle`,
+  bubbling and `Ctx.StopPropagation`, `Ctx.Attr`/`ID`/`TargetID`,
+  `App.Invalidate`, `App.Bounds`, re-render after handlers with staged
+  caching (parse/style/layout/place/paint, sheet and text caches,
+  retained frames); `headless.Session` for stepping synthetic events;
+  `platform.Mod*` constants; `examples/counter`.
 - M4 text: bundled Inter 4.1 (OFL), shaping, line breaking, wrapping,
   `white-space`, `text-align`, `line-height`, `text-overflow: ellipsis`,
   integer-only glyph rasterizer; text is measured in layout through the

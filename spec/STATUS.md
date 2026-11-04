@@ -1,6 +1,6 @@
 # Status
 
-Last updated after M4. Next step: M5 (handlers and state).
+Last updated after M5. Next step: M6 (interaction).
 
 | Milestone | State |
 |---|---|
@@ -9,7 +9,7 @@ Last updated after M4. Next step: M5 (handlers and state).
 | M2 Rasterizer | done |
 | M3 HTML+CSS to pixels | done (no images yet) |
 | M4 Text | done |
-| M5 Handlers and state | not started (`App.Handle` stores handlers only) |
+| M5 Handlers and state | done |
 | M6 Interaction | not started |
 | M7 Portability gate + macOS | portability script exists and passes; darwin not started |
 | M8 Text input | not started |
@@ -63,6 +63,17 @@ Last updated after M4. Next step: M5 (handlers and state).
   0.5 px (kerning at a line end, D23).
   * Works around a go-text v0.3.5 bug that skipped most class kerning
     (`internal/text/coverage.go`, guarded by `TestKerning`).
+* Handlers and state (M5): `onclick="Name"` bound with `App.Handle`,
+  bubbling with `Ctx.StopPropagation`, `Ctx.Attr`, click = press+release
+  on the common ancestor, `SetViewFunc` re-run after handlers or
+  `Invalidate`, missing-handler warnings. `headless.Session` steps
+  synthetic events (Click, Press, Move, Wheel, Key, Resize) one frame at a
+  time; `App.Bounds(id)` finds elements for tests.
+* `view` (M5): keeps the document between frames and recomputes only
+  changed stages (parse / style / layout / place / paint); style sheets
+  and shaped text are cached across rebuilds; idle frames copy the
+  retained image (about 11 µs at 280x220), a click with re-render about
+  1.1 ms. Hit testing follows paint order exactly (shared traversal).
 * `render`: dom → cascade → layout → display list in CSS paint order
   (stacking contexts from `z-index` and `opacity`, negative/zero/positive
   layers, `overflow` clips carried to out-of-order contexts) → raster,
@@ -120,8 +131,8 @@ Last updated after M4. Next step: M5 (handlers and state).
   hyphenation, no inline formatting across elements (§7.1).
 * `<img>`: an empty box with a warning; no image loading yet.
 * `<input>`, `<button>`, `<a>`: plain boxes (interaction in M5/M6/M8).
-* Handlers are stored but never invoked (M5). Pseudo-class state is
-  supported by the cascade, but nothing sets it yet (M6).
+* Pseudo-class state is supported by the cascade, but nothing sets it yet
+  (M6). Only `onclick` runs handlers (M6 adds keys).
 
 ## Known limitations / bugs
 
@@ -136,10 +147,10 @@ Last updated after M4. Next step: M5 (handlers and state).
   Skia's, layout is scale-independent (Chromium's 2x line heights differ),
   kerning at some soft line ends, and ellipsis on text directly inside an
   ellipsizing element.
-* `App.Frame` rebuilds the DOM, styles and layout every frame, and
-  `layout` allocates per container. Fine for now; caching comes with the
-  re-render loop (M5).
+* A changed view rebuilds the whole document (no tree diffing); text and
+  style sheets are cached, but layout runs on the whole tree and the whole
+  frame is repainted (no damage regions). `layout` allocates per
+  container.
 * Rasterizer speed: the shadow blur dominates (about half of a card
   frame).
-* Text runs are shaped on every `Build` (every frame until M5 caching);
-  glyph masks are cached per face (cleared at 32k entries).
+* Glyph masks are cached per face (cleared at 32k entries).

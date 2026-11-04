@@ -568,6 +568,49 @@ Every element is positioned (D2), which simplifies CSS 2 Appendix E:
 | D23 | Kerning between the last character of a soft-wrapped line and the following space is kept. Chromium sometimes reshapes the line without it (we could not derive when), so such a line can be up to ~0.8 px wider in Chromium (2 of 300 random documents). | Rare; affects alignment by under 1 px. |
 | D24 | Text in an element with `text-overflow: ellipsis` and clipping `overflow` ellipsizes (§7.1); in CSS it would not, because the anonymous box does not inherit them. | What authors expect; Chromium comparisons wrap text runs in an equivalent block that takes these properties. |
 
+## 8. Interaction (M5, M6)
+
+### 8.1 Handlers and events
+
+* An element declares handlers by name with attributes: `onclick="Save"`
+  and `onkeydown="Key"` (M6). Go registers them with
+  `app.Handle("Save", func(c *flexui.Ctx) {...})`. Other `on*` attributes
+  warn. A name with no registered Go handler warns once (in
+  `App.Warnings`) when it would have run.
+* **Propagation**: an event goes to its target element, then bubbles to
+  each ancestor; every element on the way with a matching attribute has
+  its handler called, deepest first, until one calls
+  `Ctx.StopPropagation()`. There is no capture phase and no default
+  action to prevent (except as listed for keys in M6).
+* **click**: a primary-button press and release form a click. Its target
+  is the nearest common ancestor of the elements under the press and the
+  release (as in browsers), so pressing one button and releasing on
+  another clicks neither. Text belongs to its parent element.
+* `Ctx` gives the event type, the `id` of the element whose handler runs
+  (`ID`) and of the target (`TargetID`), the pointer position or key, and
+  `Attr(name)` to read attributes such as `data-id` from the element whose
+  handler runs.
+
+### 8.2 State and re-rendering
+
+* Go owns the state. A view is either static (`SetView`) or a function of
+  state (`SetViewFunc`), usually an `html/template`.
+* After any handler runs (or after `App.Invalidate()`), the view function
+  is called again before the next event or frame, and its HTML replaces
+  the document. The new document is built from scratch (no tree diffing);
+  interaction state that must survive (focus, scroll positions, M6) is
+  carried over by element `id`, or by tree position for elements without
+  an id.
+* **Caching**: each frame recomputes only the stages whose inputs
+  changed: parse (only when the view's HTML string changed), style
+  (HTML, CSS or pseudo-class state changed), layout (style or viewport
+  changed), placement (scrolling), paint. Parsed style sheets and shaped
+  text runs are cached by source and parameters across rebuilds, so a
+  re-render after a handler re-shapes only text that changed. An
+  unchanged frame copies the retained image. A frame produced
+  incrementally is always byte-identical to a fresh render of the same
+  HTML (tested).
+
 ## 5. Verification
 
 Layout behavior is checked against Chromium:

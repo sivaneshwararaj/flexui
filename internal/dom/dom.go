@@ -55,6 +55,9 @@ var known = map[string]bool{
 	"button": true, "input": true, "img": true, "ul": true, "li": true, "a": true,
 }
 
+// Handler attributes (spec/SUBSET.md §8). Other on* attributes warn.
+var handlerAttrs = map[string]bool{"onclick": true, "onkeydown": true}
+
 // Elements that are never rendered.
 var skipped = map[string]bool{
 	"head": true, "title": true, "meta": true, "link": true, "style": true,
@@ -109,6 +112,9 @@ func convert(h *html.Node, parent *Node, warns *[]string) *Node {
 	}
 	for _, a := range h.Attr {
 		n.Attrs = append(n.Attrs, Attr{a.Key, a.Val})
+		if strings.HasPrefix(a.Key, "on") && !handlerAttrs[a.Key] {
+			*warns = append(*warns, fmt.Sprintf("handler attribute %s is not supported (only onclick, onkeydown)", a.Key))
+		}
 		switch a.Key {
 		case "id":
 			n.id = a.Val

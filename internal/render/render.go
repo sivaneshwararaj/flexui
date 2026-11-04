@@ -38,13 +38,13 @@ func (m textMeasure) Height(w geom.Unit) geom.Unit   { return m.t.Height(w) }
 // SUBSET.md §7.1). It inherits the inherited properties; all others are
 // initial, except that it takes `overflow` and `text-overflow` from a
 // parent whose text-overflow is ellipsis and whose overflow clips.
-func newText(raw string, parent *style.Style) *Box {
+func (c *Cache) newText(raw string, parent *style.Style) *Box {
 	st := style.Inherit(parent)
 	if parent.TextOverflow == style.TextOverflowEllipsis && parent.Overflow != style.OverflowVisible {
 		st.Overflow, st.TextOverflow = parent.Overflow, parent.TextOverflow
 	}
 	st.Finish()
-	t := text.New(raw, text.Params{
+	t := c.text(raw, text.Params{
 		Weight: int(st.FontWeight), Size: st.FontSize, LineHeight: st.LineHeight,
 		WhiteSpace: st.WhiteSpace, Align: st.TextAlign,
 		Ellipsis: st.TextOverflow == style.TextOverflowEllipsis,
@@ -59,9 +59,11 @@ func newText(raw string, parent *style.Style) *Box {
 
 // Document is a styled tree ready for layout and painting.
 type Document struct {
+	Dom      *dom.Document
 	Root     *Box
 	Warnings []string
 	seen     map[string]bool
+	cache    *Cache
 }
 
 func (d *Document) warn(format string, args ...any) {
@@ -72,26 +74,46 @@ func (d *Document) warn(format string, args ...any) {
 	}
 }
 
+// Parsed is a parsed HTML document with its parse warnings. It can be
+// styled any number of times (e.g. after a :hover change).
+type Parsed struct {
+	Dom      *dom.Document
+	Warnings []string
+}
+
+// Parse parses an HTML document.
+func Parse(html string) *Parsed {
+	doc, warns := dom.Parse(html)
+	return &Parsed{doc, warns}
+}
+
 // Build parses html and styles it. css is applied first, followed by the
 // document's own <style> elements in document order (spec/SUBSET.md §3).
 func Build(html, css string) *Document {
-	d := &Document{seen: map[string]bool{}}
-	doc, warns := dom.Parse(html)
-	for _, w := range warns {
+	return NewCache().Style(Parse(html), css)
+}
+
+// Style computes styles for a parsed document (using the dom nodes'
+// current pseudo-class state) and builds the box tree.
+func (c *Cache) Style(p *Parsed, css string) *Document {
+	c.Stats.Styles++
+	c.gen++
+	d := &Document{Dom: p.Dom, seen: map[string]bool{}, cache: c}
+	for _, w := range p.Warnings {
 		d.warn("%s", w)
 	}
 	var sheets []*style.Sheet
 	order := 0
-	for _, src := range append([]string{css}, doc.Styles...) {
-		sh, ws := style.ParseSheet(src, order)
+	for _, src := range append([]string{css}, p.Dom.Styles...) {
+		sh, ws := c.sheet(src, order)
 		order += len(sh.Rules) + 1
 		for _, w := range ws {
 			d.warn("css: %s", w.Error())
 		}
 		sheets = append(sheets, sh)
 	}
-	c := style.NewCascade(sheets...)
-	d.Root = d.build(c, doc.Root, nil)
+	d.Root = d.build(style.NewCascade(sheets...), p.Dom.Root, nil)
+	c.sweep()
 	return d
 }
 
@@ -115,7 +137,7 @@ func (d *Document) build(c *style.Cascade, el *dom.Node, parent *style.Style) *B
 				i++
 				raw += kids[i].Text
 			}
-			if kb = newText(raw, &b.Style); kb == nil {
+			if kb = d.cache.newText(raw, &b.Style); kb == nil {
 				continue
 			}
 		} else {
@@ -127,15 +149,31 @@ func (d *Document) build(c *style.Cascade, el *dom.Node, parent *style.Style) *B
 	return b
 }
 
-// Layout lays the document out in a viewport of w x h logical pixels.
+// Layout lays the document out in a viewport of w x h logical pixels and
+// places the boxes (Place with no scrolling).
 func (d *Document) Layout(w, h int) {
+	if d.cache != nil {
+		d.cache.Stats.Layouts++
+	}
 	layout.Layout(d.Root.Lay, geom.Px(w), geom.Px(h))
+	d.Place(nil)
+}
+
+// Place computes absolute border boxes from the layout result. scroll, if
+// not nil, returns the scroll offset of a scroll container's content; its
+// descendants are moved up and left by it.
+func (d *Document) Place(scroll func(*Box) geom.Point) {
 	var place func(b *Box, ox, oy geom.Unit)
 	place = func(b *Box, ox, oy geom.Unit) {
 		bx := b.Lay.Box
 		b.Abs = geom.Rect{X: ox + bx.X, Y: oy + bx.Y, W: bx.W, H: bx.H}
+		cx, cy := b.Abs.X, b.Abs.Y
+		if scroll != nil && b.El != nil {
+			o := scroll(b)
+			cx, cy = cx-o.X, cy-o.Y
+		}
 		for _, k := range b.Kids {
-			place(k, b.Abs.X, b.Abs.Y)
+			place(k, cx, cy)
 		}
 	}
 	place(d.Root, 0, 0)
@@ -149,18 +187,28 @@ func Render(html, css string, w, h int, scale float64) (*image.RGBA, []string) {
 	return img, warns
 }
 
-// RenderInto is Render into an existing image (reused across frames).
+// RenderInto is Render into an existing image.
 func RenderInto(img *image.RGBA, html, css string, w, h int, scale float64) []string {
 	d := Build(html, css)
 	d.Layout(w, h)
 	var l paint.List
-	l.FillRRect(paint.Rect(geom.Rect{W: geom.Px(w), H: geom.Px(h)}), paint.Opaque(255, 255, 255))
-	d.Paint(&l)
 	var r paint.Raster
-	r.Begin(img, paint.Scale64(scale))
-	l.Replay(&r)
-	r.End()
+	d.Draw(img, w, h, scale, &l, &r)
 	return d.Warnings
+}
+
+// Draw paints the laid-out document into img on an opaque white canvas,
+// reusing the list and raster buffers.
+func (d *Document) Draw(img *image.RGBA, w, h int, scale float64, l *paint.List, r *paint.Raster) {
+	if d.cache != nil {
+		d.cache.Stats.Paints++
+	}
+	l.Reset()
+	l.FillRRect(paint.Rect(geom.Rect{W: geom.Px(w), H: geom.Px(h)}), paint.Opaque(255, 255, 255))
+	d.Paint(l)
+	r.Begin(img, paint.Scale64(scale))
+	l.Replay(r)
+	r.End()
 }
 
 // ---- Painting ----
@@ -235,24 +283,37 @@ type deferred struct {
 	clips []*Box
 }
 
+// visitor receives the document in paint order. Painting and hit testing
+// share the traversal, so hit testing follows exactly the paint order.
+type visitor interface {
+	box(b *Box)  // an element's own shadow, background and border
+	text(b *Box) // an anonymous text box
+	pushClip(b *Box)
+	popClip()
+	pushOpacity(b *Box)
+	popOpacity()
+}
+
 // Paint emits the document in paint order (spec/SUBSET.md §6.4).
 //
 // The root stacking context belongs to the canvas, not to <body>: body
 // is an ordinary positioned element inside it (as in CSS, where the root
 // context is <html>). So negative z-index boxes paint behind body's
 // background, exactly as in browsers.
-func (d *Document) Paint(c paint.Canvas) {
+func (d *Document) Paint(c paint.Canvas) { d.visit(painter{c}) }
+
+func (d *Document) visit(v visitor) {
 	canvas := &Box{Style: style.Initial(), Lay: &layout.Node{}, Kids: []*Box{d.Root}}
-	canvas.context(c)
+	canvas.context(v)
 }
 
-// context paints b as a stacking context (CSS 2 Appendix E, simplified
+// context visits b as a stacking context (CSS 2 Appendix E, simplified
 // because every element is positioned).
-func (b *Box) context(c paint.Canvas) {
+func (b *Box) context(v visitor) {
 	if b.Style.Opacity < 1000 {
-		c.PushOpacity(uint8((b.Style.Opacity*255 + 500) / 1000))
+		v.pushOpacity(b)
 	}
-	b.paintBox(c)
+	v.box(b)
 	var neg, pos []deferred
 	var chain []*Box
 	if b.clips() {
@@ -265,20 +326,20 @@ func (b *Box) context(c paint.Canvas) {
 	byZ(neg)
 	byZ(pos)
 	for _, d := range neg {
-		d.paint(c)
+		d.visit(v)
 	}
 	if b.clips() {
-		c.PushClip(b.clipRRect())
+		v.pushClip(b)
 	}
-	b.walk(c)
+	b.walk(v)
 	if b.clips() {
-		c.PopClip()
+		v.popClip()
 	}
 	for _, d := range pos {
-		d.paint(c)
+		d.visit(v)
 	}
 	if b.Style.Opacity < 1000 {
-		c.PopOpacity()
+		v.popOpacity()
 	}
 }
 
@@ -306,14 +367,14 @@ func (b *Box) collect(chain []*Box, neg, pos *[]deferred) {
 	}
 }
 
-// walk paints b's descendants in tree order: boxes that are not stacking
+// walk visits b's descendants in tree order: boxes that are not stacking
 // contexts, and z-index 0 contexts atomically.
-func (b *Box) walk(c paint.Canvas) {
+func (b *Box) walk(v visitor) {
 	// Anonymous text boxes are not positioned: they paint with their
 	// parent, before its (positioned) element children (§6.4).
 	for _, k := range b.Kids {
 		if k.Text != nil {
-			k.paintText(c)
+			v.text(k)
 		}
 	}
 	for _, k := range b.Kids {
@@ -322,30 +383,44 @@ func (b *Box) walk(c paint.Canvas) {
 		}
 		if k.isContext() {
 			if k.z() == 0 {
-				k.context(c)
+				k.context(v)
 			}
 			continue
 		}
-		k.paintBox(c)
+		v.box(k)
 		if k.clips() {
-			c.PushClip(k.clipRRect())
+			v.pushClip(k)
 		}
-		k.walk(c)
+		k.walk(v)
 		if k.clips() {
-			c.PopClip()
+			v.popClip()
 		}
 	}
 }
 
-func (d deferred) paint(c paint.Canvas) {
+func (d deferred) visit(v visitor) {
 	for _, cl := range d.clips {
-		c.PushClip(cl.clipRRect())
+		v.pushClip(cl)
 	}
-	d.box.context(c)
+	d.box.context(v)
 	for range d.clips {
-		c.PopClip()
+		v.popClip()
 	}
 }
+
+// painter is the visitor that draws.
+type painter struct{ c paint.Canvas }
+
+func (p painter) box(b *Box) {
+	if b.El != nil {
+		b.paintBox(p.c)
+	}
+}
+func (p painter) text(b *Box)        { b.paintText(p.c) }
+func (p painter) pushClip(b *Box)    { p.c.PushClip(b.clipRRect()) }
+func (p painter) popClip()           { p.c.PopClip() }
+func (p painter) pushOpacity(b *Box) { p.c.PushOpacity(uint8((b.Style.Opacity*255 + 500) / 1000)) }
+func (p painter) popOpacity()        { p.c.PopOpacity() }
 
 // paintText draws an anonymous text box's lines.
 func (b *Box) paintText(c paint.Canvas) {

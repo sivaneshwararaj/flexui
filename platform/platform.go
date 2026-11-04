@@ -43,10 +43,18 @@ type Event struct {
 	Button int
 	Key    string // key name for key events
 	Text   string // committed text for EventText
-	Mods   uint8
-	Width  int // new size for EventResize
+	Mods   uint8  // ModShift | ModCtrl | ModAlt | ModMeta
+	Width  int    // new size for EventResize
 	Height int
 }
+
+// Modifier key bits for Event.Mods.
+const (
+	ModShift uint8 = 1 << iota
+	ModCtrl
+	ModAlt
+	ModMeta
+)
 
 // AppHandler is implemented by the application runtime (package app).
 type AppHandler interface {

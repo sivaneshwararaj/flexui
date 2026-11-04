@@ -18,9 +18,9 @@ Public API (keep small, documented, semver `v0.x`):
 
 | Package | Role |
 |---|---|
-| `flexui` (repo root) | `RenderHTML`, `CheckHTML`; `App`, `Options`, `Ctx`, `Handler`: `New`, `SetView`, `SetViewFunc`, `Handle`, `Config`, `Warnings`; implements `platform.AppHandler` (Frame renders the view). |
+| `flexui` (repo root) | `RenderHTML`, `CheckHTML`; `App`, `Options`, `Ctx`, `Handler`: `New`, `SetView`, `SetViewFunc`, `Handle`, `Invalidate`, `Bounds`, `Config`, `Warnings`; implements `platform.AppHandler` (Frame renders the view through `internal/view`; Event translates platform events and runs handlers). |
 | `platform` | `Platform` / `AppHandler` / `Event` / `Clipboard` interfaces. |
-| `platform/headless` | Reference backend for tests; `Render(app, "out.png")`, `RenderImage`. |
+| `platform/headless` | Reference backend for tests; `Render(app, "out.png")`, `RenderImage`, and `Session` (`Start`, `Click`, `Press`, `Move`, `Wheel`, `Key`, `Resize`, `Frame`) to step synthetic events. |
 
 Implementation (`internal/`, free to change):
 
@@ -31,7 +31,8 @@ Implementation (`internal/`, free to change):
 | `internal/layout` | Flexbox engine. Input: tree of `*layout.Node`. Output: `Node.Box`. | `geom`, `style` |
 | `internal/paint` | `Canvas` draw interface (incl. `Glyphs` runs over a `GlyphSource`), `List` display list, `Raster` integer-only software rasterizer. | `geom` |
 | `internal/dom` | HTML → node tree (`<body>` root, `<style>` collection); `*dom.Node` implements `style.Element`. | `golang.org/x/net/html`, `style` |
-| `internal/render` | dom → cascade → layout → paint order (stacking contexts) → display list → raster. `Build`, `Document.Layout/Paint`, `Render`, `RenderInto`. | all of the above |
+| `internal/render` | dom → cascade → layout → paint order (stacking contexts) → display list → raster. `Parse`, `Cache.Style` (sheet and text caches), `Document.Layout/Place/Paint/Draw/HitTest`, `Build`, `Render`. | all of the above |
+| `internal/view` | Live document between frames: staged invalidation (parse/style/layout/place/paint), retained frame, hit testing, event dispatch (bubbling) to a handler callback; interaction state (M6). | `render`, `dom` |
 | `internal/text` | Bundled Inter faces, shaping (font units), line breaking, `Text` layout (lines, intrinsic widths, ellipsis), glyph rasterizer (`paint.GlyphSource`). | `go-text/typesetting`, `geom`, `style`, `paint` |
 
 `examples/` is a separate module (`replace` to `../`) that uses only the
@@ -151,3 +152,20 @@ declaration strings. Each case is checked two ways:
   `scripts/textcheck.cjs` dumps boxes and lines; `internal/render/text_test.go`
   compares (docs in `testdata/text/docs`, 300 seeded random documents in
   `text_random_test.go`).
+
+## App runtime (`flexui.go`, `internal/view/`)
+
+* `App.Frame`: if dirty (a handler ran or `Invalidate`), call the view
+  function and `view.SetSource(html, css)`; then `view.Frame`, which
+  recomputes only invalidated stages and copies the retained image into
+  the platform's buffer.
+* `App.Event`: refresh the view first (so events see the current
+  document), then translate the platform event into view calls
+  (`PointerDown/Up`, ...). The view dispatches DOM-like events along the
+  parent chain and calls `App.call` for each element with a matching
+  `on<type>` attribute; `call` runs the Go handler and marks the app dirty.
+* Paint order and hit order share one traversal (`render.visitor`):
+  `painter` draws, `hitter` records the last element containing the point
+  inside all active clips.
+* Tests: `app_test.go` (counter goldens in `testdata/app`, bubbling,
+  caching counters via `view.Stats`).
