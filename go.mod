@@ -3,6 +3,7 @@ module github.com/sivaneshwararaj/flexui
 go 1.24
 
 require (
+	github.com/ebitengine/purego v0.10.0
 	github.com/go-text/typesetting v0.3.5
 	golang.org/x/net v0.38.0
 )

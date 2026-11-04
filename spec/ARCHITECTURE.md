@@ -20,6 +20,7 @@ Public API (keep small, documented, semver `v0.x`):
 |---|---|
 | `flexui` (repo root) | `RenderHTML`, `CheckHTML`; `App`, `Options`, `Ctx`, `Handler`: `New`, `SetView`, `SetViewFunc`, `Handle`, `Invalidate`, `Bounds`, `Config`, `Warnings`; implements `platform.AppHandler` (Frame renders the view through `internal/view`; Event translates platform events and runs handlers). |
 | `platform` | `Platform` / `AppHandler` / `Event` / `Clipboard` interfaces. |
+| `platform/darwin` | macOS window via purego: `Run(app)`, `Open`/`Window` (layer presentation, event translation), `Clipboard`; `stages/stageN` verification commands. Compile-checked only. |
 | `platform/headless` | Reference backend for tests; `Render(app, "out.png")`, `RenderImage`, and `Session` (`Start`, `Click`, `Press`, `Move`, `Wheel`, `Key`, `Resize`, `Frame`) to step synthetic events. |
 
 Implementation (`internal/`, free to change):

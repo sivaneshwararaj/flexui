@@ -1,6 +1,6 @@
 # Status
 
-Last updated after M8a. Next steps: M7 (macOS window), M9 (demo).
+Last updated after M7. Next step: M9 (demo app).
 
 | Milestone | State |
 |---|---|
@@ -12,7 +12,7 @@ Last updated after M8a. Next steps: M7 (macOS window), M9 (demo).
 | M5 Handlers and state | done |
 | M6 Interaction | done |
 | M5b Inline formatting, images, default styles, disabled, focus events, scrollbars | done |
-| M7 Portability gate + macOS | portability script exists and passes; darwin not started |
+| M7 Portability gate + macOS | gate done; macOS window written and compile-checked only, **never run** (see platform/darwin/README.md) |
 | M8 Text input | M8a done (editing model, headless); IME composition with the macOS step |
 | M9 Demo app | not started |
 
@@ -155,9 +155,19 @@ Last updated after M8a. Next steps: M7 (macOS window), M9 (demo).
 * Binary size: `examples/hello` with both fonts is 7.2 MB (linux/amd64).
 * Determinism: layout and rasterization are integer-only; tests pass with
   `GOARCH=386`.
-* `scripts/check-portability.sh`: builds and vets the library and the
-  examples module for 5 targets with `CGO_ENABLED=0`, and checks that the
-  root package and `internal/` never import platform backends.
+* `scripts/check-portability.sh` (the portability gate): builds and vets
+  the library, the macOS backend and its stage commands, and the
+  examples module for 5 targets with `CGO_ENABLED=0`; checks the
+  dependency rules on every target; and checks that the 24 golden
+  renders hash identically on linux/386 (`testdata/render/hashes.txt`,
+  `TestHashes`).
+* macOS backend (`platform/darwin`, purego): window, layer
+  presentation at the backing scale, resize, mouse/wheel/keys, typed
+  text, system clipboard, `darwin.Run(app)`; seven staged commands with
+  `EXPECT`/`RESULT` lines and `-debug` logs; `examples/counter -window`.
+  **It compiles for darwin/arm64 and darwin/amd64 but has never been run;
+  nothing about it is verified.** Untested parts are listed in
+  `platform/darwin/README.md`.
 
 ## Stubbed
 

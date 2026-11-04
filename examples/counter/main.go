@@ -1,12 +1,14 @@
 // Counter is a minimal stateful flexui app: two buttons change a number,
 // and the view is re-rendered from state after every click. Run it
-// headless to write PNGs:
+// headless to write PNGs, or in a window on macOS:
 //
 //	go run ./counter
+//	go run ./counter -window
 package main
 
 import (
 	"bytes"
+	"flag"
 	"html/template"
 	"log"
 
@@ -53,6 +55,15 @@ func main() {
 	}, CounterCSS)
 	app.Handle("Inc", func(*flexui.Ctx) { st.Count++ })
 	app.Handle("Dec", func(*flexui.Ctx) { st.Count-- })
+
+	window := flag.Bool("window", false, "open a native window (macOS)")
+	flag.Parse()
+	if *window {
+		if err := runWindow(app); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 
 	s := headless.Start(app)
 	if err := s.Save("counter-0.png"); err != nil {

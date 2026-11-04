@@ -853,6 +853,16 @@ Layout behavior is checked against Chromium:
   flex sizes: 2/64 px; D23: 0.5 px); the test fails if a listed case
   starts matching exactly. Text RenderHTML documents are also in the
   screenshot diff, with bounds for D21/D22.
+* **Determinism gate** (M7): `TestHashes` renders every golden document
+  (and 2x variant) and compares SHA-256 hashes of the pixels with
+  `testdata/render/hashes.txt`. `scripts/check-portability.sh` runs it on
+  linux/386 besides the normal amd64 run, builds and vets everything
+  (including the macOS backend and its stages) for linux, darwin and
+  windows on amd64/arm64 with `CGO_ENABLED=0`, and checks the dependency
+  rules for every target (no platform backend, purego or x/sys in the
+  core; purego only in `platform/darwin`). On macOS and Windows, run
+  `go test ./internal/render -run TestHashes` there. App goldens
+  (`testdata/app`) are compared byte for byte too.
 * `go test ./internal/layout -run TestReduce -v -args -reduce=CASE`
   minimizes a failing case against a live Chromium
   (`scripts/chrome-serve.cjs`). It deletes subtrees and declarations while

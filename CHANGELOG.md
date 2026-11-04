@@ -6,6 +6,12 @@ versioning with `v0.x` tags until the API settles.
 ## Unreleased
 
 ### Added
+- M7: portability gate (builds/vets all targets, dependency rules on every
+  OS, render hashes on linux/386, `TestHashes` with
+  `testdata/render/hashes.txt`); `platform/darwin` (purego) with
+  `darwin.Run`, staged verification commands and README (compile-checked,
+  not yet run on a Mac); `examples/counter -window`. New dependency:
+  `github.com/ebitengine/purego` v0.10.0 (macOS backend only).
 - M8a text inputs: editing model (`internal/edit`), keyboard editing and
   movement, clipboard (`App.SetClipboard`), pointer caret and selection,
   placeholder, `oninput`/`onchange`, `Ctx.Value`, `App.Value`,
