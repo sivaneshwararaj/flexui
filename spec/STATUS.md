@@ -1,6 +1,6 @@
 # Status
 
-Last updated after M3. Next step: M4 (text).
+Last updated after the specificity cascade (pre-M4). Next step: M4 (text).
 
 | Milestone | State |
 |---|---|
@@ -29,8 +29,9 @@ Last updated after M3. Next step: M4 (text).
   unknown elements, `<script>` and non-text `<input>` types warn.
 * `style`: style sheets (rules, selector lists, comments, at-rules skipped
   with a warning), selectors (type, `*`, `#id`, `.class`, descendant,
-  child, `:hover`/`:focus`/`:active`), the cascade of spec §3 (source
-  order, pseudo-class layer, inline), inheritance, `currentcolor`. All
+  child, `:hover`/`:focus`/`:active`), the cascade of spec §3
+  (specificity, then source order, then inline), inheritance,
+  `currentcolor`. All
   layout properties, and the paint and text properties of spec §2.1:
   colors (hex, `rgb()`, 148 named), `background(-color)`, `border`,
   `border-color`/`-style`/`-radius`, `opacity`, `box-shadow`, `font-*`,
@@ -55,7 +56,7 @@ Last updated after M3. Next step: M4 (text).
   layers, `overflow` clips carried to out-of-order contexts) → raster,
   on a white canvas.
 * Tests:
-  * 16 RenderHTML goldens (13 documents, 3 also at 2x) in
+  * 17 RenderHTML goldens (14 documents, 3 also at 2x) in
     `testdata/render/golden`. They include three z-index documents with
     overlapping absolute boxes (negative, nested and clipped contexts).
   * 8 rasterizer goldens.
@@ -79,6 +80,7 @@ Last updated after M3. Next step: M4 (text).
   | radius | 63 | 0.170 | 0.950% | 0.128% | accepted (D18) |
   | radius@2x | 74 | 0.059 | 0.353% | 0.041% | accepted (D18) |
   | shadows | 85 | 0.473 | 1.184% | 0.055% | accepted (D17, D18) |
+  | specificity | 34 | 0.053 | 0.456% | 0.003% | accepted (D18) |
   | zindex_clip | 26 | 0.014 | 0.065% | 0% | ok |
   | zindex_clip@2x | 50 | 0.013 | 0.066% | 0.004% | accepted (D18) |
   | zindex_nested | 1 | 0.022 | 0% | 0% | ok |
@@ -111,9 +113,6 @@ Last updated after M3. Next step: M4 (text).
 * Paint deviations D15-D20 (`spec/SUBSET.md` §6): one `border-color`, one
   outer `box-shadow`, box-blur shadows, supersampled curve AA, opacity
   rounding, and no body-to-canvas background propagation.
-* The cascade uses source order, not specificity (D7). Documents written
-  for browsers that rely on specificity can render differently; the
-  Chromium-compared documents are written so that both orders agree.
 * `App.Frame` rebuilds the DOM, styles and layout every frame, and
   `layout` allocates per container. Fine for now; caching comes with the
   re-render loop (M5).

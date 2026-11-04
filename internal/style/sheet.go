@@ -2,6 +2,7 @@ package style
 
 import (
 	"fmt"
+	"math/bits"
 	"sort"
 	"strings"
 )
@@ -35,6 +36,7 @@ type Rule struct {
 	Sel   Selector
 	Decls []Declaration
 	Order int // source position of the rule, across all sheets
+	Spec  int // Sel.Specificity()
 }
 
 // Selector is a sequence of compound selectors joined by combinators.
@@ -51,6 +53,23 @@ func (s *Selector) HasPseudo() bool {
 		}
 	}
 	return false
+}
+
+// Specificity returns the selector's CSS specificity packed as
+// a<<16 | b<<8 | c: a counts ids, b classes and pseudo-classes, c type
+// selectors (`*` counts nothing). Each count saturates at 255.
+func (s *Selector) Specificity() int {
+	var a, b, c int
+	for _, p := range s.Parts {
+		if p.ID != "" {
+			a++
+		}
+		b += len(p.Classes) + bits.OnesCount8(uint8(p.Pseudo))
+		if p.Tag != "" {
+			c++
+		}
+	}
+	return min(a, 255)<<16 | min(b, 255)<<8 | min(c, 255)
 }
 
 // Compound is `tag#id.class:pseudo`; empty fields match anything.
@@ -102,7 +121,7 @@ func ParseSheet(src string, orderBase int) (*Sheet, []Warning) {
 				warns = append(warns, Warning{Msg: err.Error()})
 				continue
 			}
-			sh.Rules = append(sh.Rules, Rule{Sel: sel, Decls: valid, Order: order})
+			sh.Rules = append(sh.Rules, Rule{Sel: sel, Decls: valid, Order: order, Spec: sel.Specificity()})
 		}
 		order++
 	}
@@ -309,9 +328,8 @@ func NewCascade(sheets ...*Sheet) *Cascade {
 // Compute returns the computed style of el, whose parent has computed
 // style parent (nil for the root). inline is the element's style=""
 // attribute. Order (spec/SUBSET.md §3): inherited/initial values, then
-// matching rules without pseudo-classes in source order, then matching
-// rules with pseudo-classes in source order, then inline declarations.
-// Specificity is not used. Warnings come from inline declarations only
+// matching rules by ascending specificity, ties broken by source order,
+// then inline declarations. Warnings come from inline declarations only
 // (sheet warnings are reported once by ParseSheet).
 func (c *Cascade) Compute(el Element, parent *Style, inline string) (Style, []Warning) {
 	s := Inherit(parent)
@@ -322,9 +340,8 @@ func (c *Cascade) Compute(el Element, parent *Style, inline string) (Style, []Wa
 		}
 	}
 	sort.SliceStable(matched, func(a, b int) bool {
-		pa, pb := matched[a].Sel.HasPseudo(), matched[b].Sel.HasPseudo()
-		if pa != pb {
-			return !pa
+		if matched[a].Spec != matched[b].Spec {
+			return matched[a].Spec < matched[b].Spec
 		}
 		return matched[a].Order < matched[b].Order
 	})

@@ -39,6 +39,7 @@ var acceptedChromeDiffs = map[string]accepted{
 	"radius":         {"D18 curve AA", 0.26, 0.0020},                  // 0.170 / 0.128%
 	"radius@2x":      {"D18 curve AA", 0.09, 0.0007},                  // 0.059 / 0.041%
 	"shadows":        {"D17 shadow blur, D18 curve AA", 0.71, 0.0009}, // 0.473 / 0.055%
+	"specificity":    {"D18 curve AA", 0.08, 0.0001},                  // 0.053 / 0.003%
 	"zindex_clip@2x": {"D18 curve AA (rounded clip)", 0.05, 0.0001},   // 0.013 / 0.004%
 }
 

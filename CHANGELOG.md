@@ -8,7 +8,7 @@ versioning with `v0.x` tags until the API settles.
 ### Added
 - M3: `flexui.RenderHTML(html, css, w, h)` and `CheckHTML`; `App.Frame`
   renders views. HTML5 parsing (`golang.org/x/net/html` v0.38.0), style
-  sheets, selectors and the source-order cascade, inheritance, colors,
+  sheets, selectors and the cascade, inheritance, colors,
   `background-color`, `border`, `border-radius`, `opacity`, `box-shadow`,
   text properties (stored for M4), `z-index` stacking contexts and CSS
   paint order. Golden documents and a pixel diff against Chromium
@@ -28,6 +28,9 @@ versioning with `v0.x` tags until the API settles.
   trees) and a test-case reducer.
 
 ### Changed
+- The cascade orders rules by CSS specificity (id, class/pseudo-class,
+  type), then source order; the source-order cascade and its
+  pseudo-class layer (deviation D7) are gone.
 - Implementation packages moved under `internal/`.
 
 ### Fixed (layout, found by differential testing)

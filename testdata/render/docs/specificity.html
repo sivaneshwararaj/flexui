@@ -1,0 +1,26 @@
+<!-- size: 240x150 -->
+<html><head><style>
+/* Every pair below is written so that source order and specificity
+   disagree: the box is green only if specificity wins. */
+body { background-color: #f4f5f7; padding: 10px; gap: 8px; }
+.row { flex-direction: row; gap: 8px; height: 36px; }
+.row > div { flex: 1; border: 2px solid #1e222a; border-radius: 4px; }
+#a { background-color: #28aa64; }
+.box { background-color: #e6463c; }
+div.box.b { background-color: #28aa64; }
+.box.b { background-color: #e6463c; }
+.row .c { background-color: #28aa64; border-color: #3478f6; }
+.c { background-color: #e6463c; border-color: #e6463c; }
+.row > .d { background-color: #28aa64; }
+div div { background-color: #e6463c; }
+body > div.wide { height: 24px; background-color: #3478f6; }
+.wide { height: 60px; background-color: #e6463c; }
+#e { width: 50%; }
+div#e { background-color: #28aa64; }
+.wide#e { background-color: #8a50d2; }
+</style></head><body>
+<div class="row"><div id="a" class="box"></div><div class="box b"></div><div class="c"></div></div>
+<div class="row"><div class="d"></div><div class="d" style="background-color: #fac828"></div></div>
+<div class="wide"></div>
+<div class="wide" id="e"></div>
+</body></html>

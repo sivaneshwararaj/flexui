@@ -146,12 +146,14 @@ func TestSelectors(t *testing.T) {
 func TestCascadeOrder(t *testing.T) {
 	root := &fakeEl{tag: "body"}
 	el := &fakeEl{tag: "div", id: "x", classes: []string{"c"}, parent: root, state: StateHover}
-	// Source order wins regardless of specificity; pseudo-class rules come
-	// after plain rules; inline comes last.
+	// Specificity wins over source order (#x beats .c and div:hover);
+	// div:hover (0,1,1) beats .c (0,1,0); inline comes last.
 	sheet, w := ParseSheet(`
-		#x { width: 1px; height: 1px; padding: 1px }
-		div:hover { width: 2px; }
-		.c { width: 3px; height: 3px; }
+		#x { width: 1px; padding: 1px }
+		div:hover { width: 2px; height: 2px; min-width: 2px }
+		.c { height: 3px; min-width: 3px; max-width: 3px }
+		div.c { max-width: 8px }
+		.c.c { max-width: 6px }
 		@media (min-width: 1px) { div { width: 9px } }
 		div { margin: 4px } /* comment */
 		p + q { width: 7px }
@@ -163,8 +165,26 @@ func TestCascadeOrder(t *testing.T) {
 	if len(iw) != 1 {
 		t.Errorf("inline warnings %v", iw)
 	}
-	if s.Width != Px(2) || s.Height != Px(3) || s.Margin[0] != Px(4) || s.Padding[0] != Px(5) {
-		t.Errorf("got width %v height %v margin %v padding %v", s.Width, s.Height, s.Margin[0], s.Padding[0])
+	if s.Width != Px(1) || s.Height != Px(2) || s.MinWidth != Px(2) || s.MaxWidth != Px(6) || s.Margin[0] != Px(4) || s.Padding[0] != Px(5) {
+		t.Errorf("got width %v height %v min %v max %v margin %v padding %v", s.Width, s.Height, s.MinWidth, s.MaxWidth, s.Margin[0], s.Padding[0])
+	}
+	// Equal specificity: source order.
+	sheet, _ = ParseSheet(`.c { width: 1px } div { width: 9px } .c { height: 1px } #x.c { height: 2px } div#x { height: 3px }`, 0)
+	s, _ = NewCascade(sheet).Compute(el, nil, "")
+	if s.Width != Px(1) || s.Height != Px(2) {
+		t.Errorf("tie-break: width %v height %v", s.Width, s.Height)
+	}
+}
+
+func TestSpecificity(t *testing.T) {
+	for sel, want := range map[string]int{
+		"*": 0, "div": 1, ".a": 1 << 8, "#a": 1 << 16, "div.a.b:hover": 3<<8 | 1,
+		"ul > li#x .c:focus": 1<<16 | 2<<8 | 2, "* > *": 0,
+	} {
+		s, err := ParseSelector(sel)
+		if err != nil || s.Specificity() != want {
+			t.Errorf("%q: %x %v, want %x", sel, s.Specificity(), err, want)
+		}
 	}
 }
 

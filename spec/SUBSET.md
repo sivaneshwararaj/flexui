@@ -269,14 +269,19 @@ Sources, in order: the `css` argument of `RenderHTML` / `App.SetView`,
 then the document's `<style>` elements in document order, then each
 element's `style=""` attribute.
 
-Cascade order, lowest to highest (no specificity calculation):
+Cascade order, lowest to highest:
 
-1. Initial values.
-2. `<style>` rules in **source order** (later rule wins, regardless of
-   selector specificity).
-3. Rules with a pseudo-class, in source order (so `:hover` overrides the
-   base rule written before or after it).
-4. Inline `style=""`.
+1. Inherited or initial values.
+2. Matching rules by ascending **specificity**, ties broken by source
+   order (later wins). Specificity is the CSS triple (a, b, c): a counts
+   id selectors, b counts class selectors and pseudo-classes, c counts type
+   selectors; `*` and combinators count nothing. Triples compare
+   lexicographically (each count saturates at 255). `:hover` therefore
+   overrides a plain rule only when its selector is at least as specific,
+   exactly as in CSS.
+3. Inline `style=""` (beats every rule, as in CSS).
+
+`!important` is not supported (§2.1), so there is no important layer.
 
 Inheritance: only `color`, `font-family`, `font-size`, `font-weight`,
 `line-height`, `text-align` and `white-space` inherit, as in CSS.
@@ -293,7 +298,6 @@ resolves to the element's computed `color`.
 | D4 | Root `auto` width/height fill the viewport. | App windows, not documents. |
 | D5 | *Removed:* auto margins on absolutely positioned elements now behave as in CSS (§2.4). | |
 | D6 | No baseline alignment. | Not in the subset. |
-| D7 | Cascade by source order + pseudo-class layer, not specificity. | Requested simplicity, documented in §3. |
 | D8 | `overflow` is one value for both axes. | Simplicity. |
 | D9 | *Removed:* width-only measurements no longer drop height information in subtrees that contain a column-wrap container (the only case where widths depend on heights). | |
 | D10 | `MeasureFunc` leaves (text, images) are sized as fit-content: width `max(min-content, min(max-content, available))`, then height at that width. | Same as CSS for text; images get their intrinsic size. |
@@ -310,6 +314,8 @@ resolves to the element's computed `color`.
   resolved against the final width, or the final height if it is definite.
 * **D9** (width-only measurement ignoring heights) is removed; see the
   table above.
+* D7 (cascade by source order and a pseudo-class layer instead of
+  specificity): replaced by real specificity (§3).
 
 ## 6. Painting and rasterization (M2, M3)
 
