@@ -18,7 +18,7 @@ Public API (keep small, documented, semver `v0.x`):
 
 | Package | Role |
 |---|---|
-| `flexui` (repo root) | `App`, `Options`, `Ctx`, `Handler`: `New`, `SetView`, `SetViewFunc`, `Handle`, `Config`; implements `platform.AppHandler`. |
+| `flexui` (repo root) | `RenderHTML`, `CheckHTML`; `App`, `Options`, `Ctx`, `Handler`: `New`, `SetView`, `SetViewFunc`, `Handle`, `Config`, `Warnings`; implements `platform.AppHandler` (Frame renders the view). |
 | `platform` | `Platform` / `AppHandler` / `Event` / `Clipboard` interfaces. |
 | `platform/headless` | Reference backend for tests; `Render(app, "out.png")`, `RenderImage`. |
 
@@ -27,10 +27,11 @@ Implementation (`internal/`, free to change):
 | Package | Role | Depends on |
 |---|---|---|
 | `internal/geom` | `Unit` (fixed-point 1/64 px), `Rect`, `Size`, `Edges`, 128-bit `MulDiv`. | stdlib |
-| `internal/style` | Computed `Style`, value types, declaration parser, warnings. Selectors/cascade in M3. | `geom` |
+| `internal/style` | Computed `Style` (layout, paint, text props), declaration parser, colors, style sheets, selectors, cascade (`Cascade.Compute`) over a small `Element` interface. | `geom` |
 | `internal/layout` | Flexbox engine. Input: tree of `*layout.Node`. Output: `Node.Box`. | `geom`, `style` |
 | `internal/paint` | `Canvas` draw interface, `List` display list, `Raster` integer-only software rasterizer. | `geom` |
-| `internal/dom` | HTML → node tree (M3). | `golang.org/x/net/html` |
+| `internal/dom` | HTML → node tree (`<body>` root, `<style>` collection); `*dom.Node` implements `style.Element`. | `golang.org/x/net/html`, `style` |
+| `internal/render` | dom → cascade → layout → paint order (stacking contexts) → display list → raster. `Build`, `Document.Layout/Paint`, `Render`, `RenderInto`. | all of the above |
 | `internal/text` | Font, shaping, line breaking (M4). | `go-text/typesetting` |
 
 `examples/` is a separate module (`replace` to `../`) that uses only the
@@ -112,3 +113,20 @@ declaration strings. Each case is checked two ways:
   division, composite outside the box.
 * Tests: `golden_test.go` (scenes -> `testdata/paint/*.png`, `-update`),
   `raster_test.go` (snapping invariants, determinism, no allocations).
+
+## Render (`internal/render/`)
+
+* `Build(html, css)`: parse, cascade (css first, then `<style>`s, then
+  inline), build `Box` tree with `layout.Node`s; text nodes skipped with a
+  warning until M4.
+* `Document.Layout(w, h)`: run layout, compute absolute border boxes.
+* `Document.Paint(canvas)`: CSS paint order (spec/SUBSET.md §6.4). An
+  implicit canvas box is the root stacking context; `context` paints a
+  context (own box, negative z, tree-order walk with z=0 contexts inline,
+  positive z), `collect` finds out-of-order contexts with the overflow
+  clips of their ancestors.
+* Tests: `golden_test.go` renders `testdata/render/docs/*.html` (size in
+  the first-line comment) to `testdata/render/golden`; `chrome_test.go`
+  compares with Chromium screenshots (`testdata/render/chrome`, made by
+  `scripts/screenshot.cjs` via `make crosscheck`) and reports max/mean
+  error.

@@ -6,6 +6,13 @@ versioning with `v0.x` tags until the API settles.
 ## Unreleased
 
 ### Added
+- M3: `flexui.RenderHTML(html, css, w, h)` and `CheckHTML`; `App.Frame`
+  renders views. HTML5 parsing (`golang.org/x/net/html` v0.38.0), style
+  sheets, selectors and the source-order cascade, inheritance, colors,
+  `background-color`, `border`, `border-radius`, `opacity`, `box-shadow`,
+  text properties (stored for M4), `z-index` stacking contexts and CSS
+  paint order. Golden documents and a pixel diff against Chromium
+  screenshots with max/mean error reporting.
 - Public root package `flexui` (`New`, `Options`, `App.SetView`,
   `App.SetViewFunc`, `App.Handle`, `Ctx`), `platform` interfaces, and
   `platform/headless` with `Render`/`RenderImage`. Rendering of views

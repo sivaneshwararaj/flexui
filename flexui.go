@@ -14,18 +14,31 @@
 // Backends live in separate packages under platform/ so that importing
 // flexui never compiles code for other operating systems.
 //
-// Status: the API surface is in place, but HTML rendering arrives in
-// milestone M3 and handlers in M5; until then Frame paints only the
-// background. See spec/STATUS.md.
+// Status: views render (M3) except text (M4); handlers run from M5. See
+// spec/STATUS.md.
 package flexui
 
 import (
 	"image"
-	"image/color"
-	"image/draw"
 
+	"github.com/sivaneshwararaj/flexui/internal/render"
 	"github.com/sivaneshwararaj/flexui/platform"
 )
+
+// RenderHTML renders an HTML document styled with css (plus any <style>
+// elements in it) at w x h logical pixels, scale 1, on a white canvas.
+// Unsupported HTML or CSS is ignored; use CheckHTML to see warnings.
+func RenderHTML(html, css string, w, h int) *image.RGBA {
+	img, _ := render.Render(html, css, w, h, 1)
+	return img
+}
+
+// CheckHTML returns the warnings produced while rendering html and css:
+// unsupported elements, properties, values and selectors.
+func CheckHTML(html, css string) []string {
+	d := render.Build(html, css)
+	return d.Warnings
+}
 
 // Options configures an App.
 type Options struct {
@@ -61,6 +74,7 @@ type App struct {
 	css      string
 	handlers map[string]Handler
 	w, h     int
+	warnings []string
 }
 
 // New creates an application.
@@ -95,11 +109,18 @@ func (a *App) Config() platform.Config {
 	return platform.Config{Title: a.opts.Title, Width: a.opts.Width, Height: a.opts.Height, Scale: a.opts.Scale}
 }
 
-// Frame implements platform.AppHandler.
+// Frame implements platform.AppHandler: it renders the current view.
 func (a *App) Frame(buf *image.RGBA, w, h int, scale float64) {
 	a.w, a.h = w, h
-	draw.Draw(buf, buf.Rect, image.NewUniform(color.White), image.Point{}, draw.Src)
+	html := a.html
+	if a.viewFn != nil {
+		html = a.viewFn()
+	}
+	a.warnings = render.RenderInto(buf, html, a.css, w, h, scale)
 }
+
+// Warnings returns the warnings from the most recent frame.
+func (a *App) Warnings() []string { return a.warnings }
 
 // Event implements platform.AppHandler.
 func (a *App) Event(e platform.Event) {

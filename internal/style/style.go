@@ -39,6 +39,103 @@ type Style struct {
 	Overflow  Overflow
 	ZIndex    int32
 	ZAuto     bool
+
+	// Paint properties (not inherited).
+	BackgroundColor    Color
+	BorderColor        Color
+	BorderColorCurrent bool         // border-color: currentcolor (initial)
+	BorderRadius       [4][2]Length // TL, TR, BR, BL; [0] horizontal, [1] vertical
+	Opacity            int32        // 0..1000
+	Shadow             BoxShadow
+
+	// Text properties. Color, Font*, LineHeight, TextAlign and WhiteSpace
+	// inherit; TextOverflow does not. Used from M4 on.
+	Color        Color
+	FontFamily   string // raw comma-separated list, case preserved
+	FontSize     geom.Unit
+	FontWeight   int16 // 100..900
+	LineHeight   LineHeight
+	TextAlign    TextAlign
+	WhiteSpace   WhiteSpace
+	TextOverflow TextOverflow
+}
+
+// BoxShadow is a single outer box shadow.
+type BoxShadow struct {
+	Set                  bool
+	DX, DY, Blur, Spread geom.Unit
+	Color                Color
+	CurrentColor         bool // no color given: use the element's color
+}
+
+// LineHeight is `normal`, a number (V in 1/1000) or a length (V in Units).
+type LineHeight struct {
+	Kind LineHeightKind
+	V    int64
+}
+
+// LineHeightKind says how LineHeight.V is interpreted.
+type LineHeightKind uint8
+
+const (
+	LineHeightNormal LineHeightKind = iota
+	LineHeightNumber
+	LineHeightLength
+)
+
+// TextAlign is the `text-align` property.
+type TextAlign uint8
+
+const (
+	TextAlignLeft TextAlign = iota
+	TextAlignRight
+	TextAlignCenter
+)
+
+// WhiteSpace is the `white-space` property.
+type WhiteSpace uint8
+
+const (
+	WhiteSpaceNormal WhiteSpace = iota
+	WhiteSpaceNowrap
+	WhiteSpacePre
+	WhiteSpacePreWrap
+)
+
+// TextOverflow is the `text-overflow` property.
+type TextOverflow uint8
+
+const (
+	TextOverflowClip TextOverflow = iota
+	TextOverflowEllipsis
+)
+
+// Inherit returns the initial style of a child of an element with
+// computed style parent: initial values, plus parent's inherited
+// properties.
+func Inherit(parent *Style) Style {
+	s := Initial()
+	if parent != nil {
+		s.Color = parent.Color
+		s.FontFamily = parent.FontFamily
+		s.FontSize = parent.FontSize
+		s.FontWeight = parent.FontWeight
+		s.LineHeight = parent.LineHeight
+		s.TextAlign = parent.TextAlign
+		s.WhiteSpace = parent.WhiteSpace
+	}
+	return s
+}
+
+// Finish resolves values that depend on other properties (currentcolor).
+// Call it after all declarations are applied.
+func (s *Style) Finish() {
+	if s.BorderColorCurrent {
+		s.BorderColor = s.Color
+	}
+	if s.Shadow.Set && s.Shadow.CurrentColor {
+		s.Shadow.Color = s.Color
+	}
 }
 
 // Initial returns the initial (default) style of every element.
@@ -57,5 +154,12 @@ func Initial() Style {
 		Padding: [4]Length{Px(0), Px(0), Px(0), Px(0)},
 		Inset:   [4]Length{Auto, Auto, Auto, Auto},
 		ZAuto:   true,
+
+		BorderColorCurrent: true,
+		BorderRadius:       [4][2]Length{{Px(0), Px(0)}, {Px(0), Px(0)}, {Px(0), Px(0)}, {Px(0), Px(0)}},
+		Opacity:            1000,
+		Color:              Color{0, 0, 0, 255},
+		FontSize:           geom.Px(16),
+		FontWeight:         400,
 	}
 }

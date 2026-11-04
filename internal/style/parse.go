@@ -71,6 +71,35 @@ func stripComments(s string) string {
 	}
 }
 
+// tokens splits a value at whitespace outside parentheses, so that
+// `rgb(1, 2, 3)` stays one token.
+func tokens(s string) []string {
+	var out []string
+	depth, start := 0, -1
+	for i := 0; i <= len(s); i++ {
+		var c byte = ' '
+		if i < len(s) {
+			c = s[i]
+		}
+		switch {
+		case c == '(':
+			depth++
+		case c == ')' && depth > 0:
+			depth--
+		}
+		space := c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f'
+		if space && depth == 0 {
+			if start >= 0 {
+				out = append(out, s[start:i])
+				start = -1
+			}
+		} else if start < 0 {
+			start = i
+		}
+	}
+	return out
+}
+
 // splitTop splits s at sep, ignoring separators inside quotes or parens.
 func splitTop(s string, sep byte) []string {
 	var out []string
@@ -137,7 +166,7 @@ func (s *Style) Apply(d Declaration, ctx Context) *Warning {
 	if v == "inherit" || v == "initial" || v == "unset" || v == "revert" {
 		return bad("CSS-wide keywords are not supported")
 	}
-	fields := strings.Fields(v)
+	fields := tokens(v)
 
 	// length parses one length, allowing the given keywords.
 	length := func(tok string, allowAuto, allowNone, allowNeg bool) (Length, bool) {
@@ -342,6 +371,138 @@ func (s *Style) Apply(d Declaration, ctx Context) *Warning {
 	case "overflow":
 		return keyword(map[string]uint8{"visible": uint8(OverflowVisible), "hidden": uint8(OverflowHidden),
 			"scroll": uint8(OverflowScroll)}, (*uint8)(&s.Overflow))
+	case "color":
+		c, cur, ok := parseColor(v)
+		if !ok {
+			return invalid
+		}
+		if !cur { // `color: currentcolor` keeps the inherited color
+			s.Color = c
+		}
+	case "background-color", "background":
+		c, cur, ok := parseColor(v)
+		if !ok || cur {
+			if d.Property == "background" {
+				return bad("only a single color is supported in `background`")
+			}
+			return invalid
+		}
+		s.BackgroundColor = c
+	case "border-color":
+		if len(fields) != 1 {
+			return bad("only one border-color for all sides is supported (D15)")
+		}
+		c, cur, ok := parseColor(v)
+		if !ok {
+			return invalid
+		}
+		s.BorderColor, s.BorderColorCurrent = c, cur
+	case "border-style":
+		switch v {
+		case "solid":
+		case "none", "hidden":
+			s.Border = [4]geom.Unit{}
+		default:
+			return bad("only `solid` and `none` borders are supported")
+		}
+	case "border":
+		return s.applyBorder(fields, ctx, invalid)
+	case "border-radius":
+		var ls []Length
+		for _, f := range fields {
+			l, ok := length(f, false, false, false)
+			if !ok {
+				return bad("only 1-4 lengths are supported (no `/` elliptical syntax)")
+			}
+			ls = append(ls, l)
+		}
+		out, ok := expandSides(ls)
+		if !ok {
+			return invalid
+		}
+		// expandSides order (top,right,bottom,left) = (TL,TR,BR,BL) here.
+		for i := range out {
+			s.BorderRadius[i] = [2]Length{out[i], out[i]}
+		}
+	case "border-top-left-radius", "border-top-right-radius", "border-bottom-right-radius", "border-bottom-left-radius":
+		if len(fields) < 1 || len(fields) > 2 {
+			return invalid
+		}
+		h, ok1 := length(fields[0], false, false, false)
+		vv, ok2 := h, ok1
+		if len(fields) == 2 {
+			vv, ok2 = length(fields[1], false, false, false)
+		}
+		if !ok1 || !ok2 {
+			return invalid
+		}
+		idx := map[string]int{"border-top-left-radius": 0, "border-top-right-radius": 1,
+			"border-bottom-right-radius": 2, "border-bottom-left-radius": 3}[d.Property]
+		s.BorderRadius[idx] = [2]Length{h, vv}
+	case "opacity":
+		var o int64
+		var ok bool
+		if strings.HasSuffix(v, "%") {
+			o, ok = parseFixed(v[:len(v)-1], 10)
+		} else {
+			o, ok = parseFixed(v, 1000)
+		}
+		if !ok || len(fields) != 1 {
+			return invalid
+		}
+		s.Opacity = int32(min(max(o, 0), 1000))
+	case "box-shadow":
+		if len(splitTop(v, ',')) > 1 {
+			return bad("only one shadow is supported (D16)")
+		}
+		return s.applyShadow(fields, ctx, bad, invalid)
+	case "font-family":
+		s.FontFamily = d.Value
+	case "font-size":
+		var l Length
+		if w := one(&l, false, false, false); w != nil {
+			return w
+		}
+		if l.Kind != LengthPx {
+			return bad("only px and rem font sizes are supported")
+		}
+		s.FontSize = geom.Unit(l.V)
+	case "font-weight":
+		switch v {
+		case "normal":
+			s.FontWeight = 400
+		case "bold":
+			s.FontWeight = 700
+		default:
+			n, ok := parseFixed(v, 1)
+			if !ok || !isInteger(v) || n < 1 || n > 1000 {
+				return invalid
+			}
+			s.FontWeight = int16(n)
+		}
+	case "line-height":
+		if v == "normal" {
+			s.LineHeight = LineHeight{}
+			return nil
+		}
+		if n, ok := parseFixed(v, 1000); ok && n >= 0 {
+			s.LineHeight = LineHeight{LineHeightNumber, n}
+			return nil
+		}
+		l, ok := parseLength(v, ctx)
+		if !ok || l.Kind != LengthPx || l.V < 0 {
+			return invalid
+		}
+		s.LineHeight = LineHeight{LineHeightLength, l.V}
+	case "text-align":
+		return keyword(map[string]uint8{"left": uint8(TextAlignLeft), "right": uint8(TextAlignRight),
+			"center": uint8(TextAlignCenter)}, (*uint8)(&s.TextAlign))
+	case "white-space":
+		return keyword(map[string]uint8{"normal": uint8(WhiteSpaceNormal), "nowrap": uint8(WhiteSpaceNowrap),
+			"pre": uint8(WhiteSpacePre), "pre-wrap": uint8(WhiteSpacePreWrap)}, (*uint8)(&s.WhiteSpace))
+	case "text-overflow":
+		return keyword(map[string]uint8{"clip": uint8(TextOverflowClip), "ellipsis": uint8(TextOverflowEllipsis)},
+			(*uint8)(&s.TextOverflow))
 	case "z-index":
 		if v == "auto" {
 			s.ZAuto, s.ZIndex = true, 0
@@ -419,6 +580,75 @@ func (s *Style) applyFlex(fields []string, ctx Context, invalid *Warning) *Warni
 	return nil
 }
 
+// applyBorder handles `border: [<width>] [solid|none] [<color>]`.
+func (s *Style) applyBorder(fields []string, ctx Context, invalid *Warning) *Warning {
+	w, c, cur := geom.Px(3), Color{}, true // CSS initial: medium, currentcolor
+	none := false
+	seen := map[string]bool{}
+	for _, f := range fields {
+		switch {
+		case f == "solid" && !seen["style"]:
+			seen["style"] = true
+		case (f == "none" || f == "hidden") && !seen["style"]:
+			seen["style"], none = true, true
+		default:
+			if u, ok := parseBorderWidth(f, ctx); ok && !seen["width"] {
+				seen["width"], w = true, u
+				continue
+			}
+			if cc, cu, ok := parseColor(f); ok && !seen["color"] {
+				seen["color"], c, cur = true, cc, cu
+				continue
+			}
+			return invalid
+		}
+	}
+	if none || !seen["style"] {
+		// A border without a style draws nothing in CSS.
+		w = 0
+	}
+	s.Border = [4]geom.Unit{w, w, w, w}
+	s.BorderColor, s.BorderColorCurrent = c, cur
+	return nil
+}
+
+// applyShadow handles `box-shadow: none | <x> <y> [<blur> [<spread>]] [<color>]`
+// (the color may also come first).
+func (s *Style) applyShadow(fields []string, ctx Context, bad func(string) *Warning, invalid *Warning) *Warning {
+	if len(fields) == 1 && fields[0] == "none" {
+		s.Shadow = BoxShadow{}
+		return nil
+	}
+	sh := BoxShadow{Set: true, CurrentColor: true}
+	var ls []geom.Unit
+	for i, f := range fields {
+		if f == "inset" {
+			return bad("inset shadows are not supported (D16)")
+		}
+		if l, ok := parseLength(f, ctx); ok && l.Kind == LengthPx {
+			ls = append(ls, geom.Unit(l.V))
+			continue
+		}
+		if c, cur, ok := parseColor(f); ok && sh.CurrentColor && (i == 0 || i == len(fields)-1) {
+			sh.Color, sh.CurrentColor = c, cur
+			continue
+		}
+		return invalid
+	}
+	if len(ls) < 2 || len(ls) > 4 || (len(ls) > 2 && ls[2] < 0) {
+		return invalid
+	}
+	sh.DX, sh.DY = ls[0], ls[1]
+	if len(ls) > 2 {
+		sh.Blur = ls[2]
+	}
+	if len(ls) > 3 {
+		sh.Spread = ls[3]
+	}
+	s.Shadow = sh
+	return nil
+}
+
 func expandSides(ls []Length) ([4]Length, bool) {
 	switch len(ls) {
 	case 1:
@@ -446,7 +676,21 @@ func parseBorderWidth(tok string, ctx Context) (geom.Unit, bool) {
 	if !ok || l.Kind != LengthPx || l.V < 0 {
 		return 0, false
 	}
-	return geom.Unit(l.V), true
+	return snapBorder(geom.Unit(l.V)), true
+}
+
+// snapBorder applies the computed-value rule for border widths, as
+// browsers do: a width of at least 1px is floored to whole pixels, a
+// width between 0 and 1px becomes 1px. Layout therefore sees the same
+// widths that are painted, at every device scale.
+func snapBorder(w geom.Unit) geom.Unit {
+	switch {
+	case w <= 0:
+		return 0
+	case w < geom.Px(1):
+		return geom.Px(1)
+	}
+	return w / geom.UnitsPerPx * geom.UnitsPerPx
 }
 
 // parseLength parses `<number>px`, `<number>%`, `<number>rem` or a bare `0`.

@@ -1,0 +1,18 @@
+<!-- size: 280x170 -->
+<html><head><style>
+body { color: #1e222a; background-color: #f4f5f7; padding: 12px; gap: 10px; }
+div { height: 30px; }
+.row { flex-direction: row; gap: 10px; height: 40px; }
+.row > div { flex: 1; border: 3px solid; }
+.row div div { height: 10px; background-color: #fac828; border: 0; }
+.blue { color: #3478f6; }
+.red { color: #e6463c; background-color: #fde0de; }
+#special { color: #28aa64; border-width: 6px; }
+.row .red.wide { flex: 2; }
+ul li { background-color: #8a50d2; width: 40px; height: 20px; }
+ul > li.alt { background-color: #28aa64; }
+</style></head><body>
+<div class="row"><div class="blue"><div></div></div><div class="red"></div><div id="special"></div></div>
+<div class="row"><div class="red wide"></div><div style="border-color: #1e222a; background-color: #e3e6ea"></div></div>
+<ul style="flex-direction: row; gap: 6px"><li></li><li class="alt"></li><li></li></ul>
+</body></html>
