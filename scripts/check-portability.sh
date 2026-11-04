@@ -7,7 +7,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-targets="linux/amd64 linux/arm64 darwin/arm64 darwin/amd64 windows/amd64"
+targets="linux/amd64 linux/arm64 darwin/arm64 darwin/amd64 windows/amd64 windows/arm64"
 status=0
 out="$(mktemp -d)"
 trap 'rm -r "$out"' EXIT
@@ -38,12 +38,19 @@ for t in $targets; do
 		fi
 	done
 done
-# purego only in the macOS backend: the headless platform and the public
-# packages must not pull it in on any OS.
+# purego only in the macOS backend and x/sys only in the Windows backend:
+# the headless platform, the platform interfaces and the other backend
+# must not pull them in on any OS.
 for t in $targets; do
-	for p in ./platform ./platform/headless; do
+	for p in ./platform ./platform/headless ./platform/windows; do
 		if GOOS="${t%/*}" GOARCH="${t#*/}" CGO_ENABLED=0 go list -deps "$p" | grep -q ebitengine/purego; then
 			echo "FAIL $p depends on purego ($t)"
+			status=1
+		fi
+	done
+	for p in ./platform ./platform/headless ./platform/darwin; do
+		if GOOS="${t%/*}" GOARCH="${t#*/}" CGO_ENABLED=0 go list -deps "$p" | grep -q golang.org/x/sys; then
+			echo "FAIL $p depends on golang.org/x/sys ($t)"
 			status=1
 		fi
 	done

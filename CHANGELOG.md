@@ -6,6 +6,10 @@ versioning with `v0.x` tags until the API settles.
 ## Unreleased
 
 ### Added
+- `platform/windows` (x/sys/windows, no cgo) with `windows.Run`, staged
+  verification commands and README (compile-checked, not yet run);
+  `-window` on Windows for the counter and demo examples. Dependency:
+  `golang.org/x/sys` v0.41.0 (Windows backend only).
 - Damage-region repainting and copying, incremental paint-only restyle
   (`FLEXUI_CHECK_DAMAGE=1` verifies them against full repaints); demo
   frame benchmarks at 2560x1600.

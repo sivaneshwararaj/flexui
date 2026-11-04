@@ -14,6 +14,7 @@ Last updated after the first macOS run (stages 1-5, 7 pass). Next steps: stage 6
 | M5b Inline formatting, images, default styles, disabled, focus events, scrollbars | done |
 | M7 Portability gate + macOS | gate done; macOS stages 1-5 and 7 passed on an Apple-silicon Mac (macOS 27.2); stage 6 (text input, clipboard), resizing and Intel Macs unverified |
 | M8 Text input | M8a done (editing model, headless); IME composition with the macOS step |
+| Windows backend | written and compile-checked (windows/amd64, arm64); **never run** (see platform/windows/README.md) |
 | M9 Demo app | done headless (`examples/demo`); the window is untested |
 
 ## Works
@@ -97,6 +98,13 @@ Last updated after the first macOS run (stages 1-5, 7 pass). Next steps: stage 6
   and shaped text are cached across rebuilds; idle frames copy the
   retained image (about 11 µs at 280x220), a click with re-render about
   1.1 ms. Hit testing follows paint order exactly (shared traversal).
+* Windows backend (`platform/windows`, x/sys/windows): Win32 window,
+  per-monitor DPI awareness, frames drawn with `SetDIBitsToDevice`,
+  mouse/wheel/keys/`WM_CHAR` text, clipboard, `windows.Run(app)`; seven
+  staged commands with `EXPECT`/`RESULT` lines and `-debug` logs (shared
+  content in `platform/internal/stagekit`); `examples/counter` and
+  `examples/demo` take `-window` on Windows too. **It compiles for
+  windows/amd64 and windows/arm64 but has never been run.**
 * Demo app (M9, `examples/demo`): a contacts manager (searchable list
   with selection and scrolling, edit form with Save/Revert enabled only
   when dirty, delete confirmation modal with Escape and backdrop click,
