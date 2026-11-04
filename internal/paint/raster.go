@@ -215,9 +215,7 @@ func (r *Raster) FillRRect(rr RRect, c Color) {
 		i := r.dst.PixOffset(area.Min.X, py)
 		end := i + 4*area.Dx()
 		if a == 255 {
-			for ; i < end; i += 4 {
-				pix[i], pix[i+1], pix[i+2], pix[i+3] = c.R, c.G, c.B, 255
-			}
+			fillOpaque(pix[i:end], c)
 		} else {
 			for ; i < end; i += 4 {
 				blend(pix, i, c, a)
@@ -250,9 +248,26 @@ func (r *Raster) Border(rr RRect, w geom.Edges, c Color) {
 	inner.r[BottomRight] = rad{sub(o[BottomRight].x, wr), sub(o[BottomRight].y, wb)}
 	inner.r[BottomLeft] = rad{sub(o[BottomLeft].x, wl), sub(o[BottomLeft].y, wb)}
 	inner.normalize()
-	r.paintCov(outer.bounds(), c, func(px, py int) int {
+	cov := func(px, py int) int {
 		return max(0, outer.cov(px, py)-inner.cov(px, py))
-	})
+	}
+	// Inside the inner shape, away from its corner zones, the inner
+	// coverage is full, so the border's is 0: paint only the four bands
+	// around that interior (disjoint, so the result is the same as
+	// visiting every pixel of the box, just faster).
+	mzx := max(inner.zx[0], inner.zx[1], inner.zx[2], inner.zx[3])
+	mzy := max(inner.zy[0], inner.zy[1], inner.zy[2], inner.zy[3])
+	sx0, sx1 := inner.x0+mzx, inner.x1-mzx
+	sy0, sy1 := inner.y0+mzy, inner.y1-mzy
+	b := outer.bounds()
+	if sx0 >= sx1 || sy0 >= sy1 {
+		r.paintCov(b, c, cov)
+		return
+	}
+	r.paintCov(image.Rect(b.Min.X, b.Min.Y, b.Max.X, sy0), c, cov)
+	r.paintCov(image.Rect(b.Min.X, sy1, b.Max.X, b.Max.Y), c, cov)
+	r.paintCov(image.Rect(b.Min.X, sy0, sx0, sy1), c, cov)
+	r.paintCov(image.Rect(sx1, sy0, b.Max.X, sy1), c, cov)
 }
 
 // PushClip implements Canvas.
@@ -316,4 +331,16 @@ func (r *Raster) PopOpacity() {
 		}
 	}
 	r.pool = append(r.pool, l.img)
+}
+
+// fillOpaque fills a span of RGBA pixels with an opaque color: one pixel
+// is written, then copied in doubling chunks.
+func fillOpaque(span []uint8, c Color) {
+	if len(span) < 4 {
+		return
+	}
+	span[0], span[1], span[2], span[3] = c.R, c.G, c.B, 255
+	for n := 4; n < len(span); n *= 2 {
+		copy(span[n:], span[:n])
+	}
 }

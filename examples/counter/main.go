@@ -3,7 +3,7 @@
 // headless to write PNGs, or in a window on macOS:
 //
 //	go run ./counter
-//	go run ./counter -window
+//	go run ./counter -window   (macOS, Windows)
 package main
 
 import (
@@ -56,7 +56,7 @@ func main() {
 	app.Handle("Inc", func(*flexui.Ctx) { st.Count++ })
 	app.Handle("Dec", func(*flexui.Ctx) { st.Count-- })
 
-	window := flag.Bool("window", false, "open a native window (macOS)")
+	window := flag.Bool("window", false, "open a native window (macOS, Windows)")
 	flag.Parse()
 	if *window {
 		if err := runWindow(app); err != nil {

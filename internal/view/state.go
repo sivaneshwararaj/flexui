@@ -83,32 +83,47 @@ func findKey(root *dom.Node, k string) *dom.Node {
 // ---- Pseudo-class state (§8.3) ----
 
 // setChain moves flag from the old element (and its ancestors, if
-// ancestors) to the new one, and invalidates style if a rule uses it.
+// ancestors) to the new one. Elements whose state really changed (not
+// common ancestors) are queued for an incremental restyle if a rule can
+// observe the flag on them.
 func (v *View) setChain(old, now *dom.Node, flag style.State, ancestors bool) {
 	if old == now {
 		return
 	}
-	affects := func(n *dom.Node) {
+	chain := func(n *dom.Node) []*dom.Node {
+		var out []*dom.Node
+		for ; n != nil; n = n.Parent {
+			out = append(out, n)
+			if !ancestors {
+				break
+			}
+		}
+		return out
+	}
+	oldC, newC := chain(old), chain(now)
+	in := func(s []*dom.Node, n *dom.Node) bool {
+		for _, x := range s {
+			if x == n {
+				return true
+			}
+		}
+		return false
+	}
+	changed := func(n *dom.Node) {
 		if v.doc != nil && !v.needStyle && v.doc.Affects(n, flag) {
-			v.needStyle = true
+			v.restyle = append(v.restyle, n)
 		}
 	}
-	for n := old; n != nil; n = n.Parent {
-		if n.Dyn&flag != 0 {
+	for _, n := range oldC {
+		if !in(newC, n) && n.Dyn&flag != 0 {
 			n.Dyn &^= flag
-			affects(n)
-		}
-		if !ancestors {
-			break
+			changed(n)
 		}
 	}
-	for n := now; n != nil; n = n.Parent {
+	for _, n := range newC {
 		if n.Dyn&flag == 0 {
 			n.Dyn |= flag
-			affects(n)
-		}
-		if !ancestors {
-			break
+			changed(n)
 		}
 	}
 }

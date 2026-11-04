@@ -250,15 +250,21 @@ func RenderInto(img *image.RGBA, html, css string, w, h int, scale float64) []st
 // Draw paints the laid-out document into img on an opaque white canvas,
 // reusing the list and raster buffers.
 func (d *Document) Draw(img *image.RGBA, w, h int, scale float64, l *paint.List, r *paint.Raster) {
+	d.Record(l, w, h)
+	r.Begin(img, paint.Scale64(scale))
+	l.Replay(r)
+	r.End()
+}
+
+// Record records the document's display list for a w x h viewport on an
+// opaque white canvas into l (which is reset first).
+func (d *Document) Record(l *paint.List, w, h int) {
 	if d.cache != nil {
 		d.cache.Stats.Paints++
 	}
 	l.Reset()
 	l.FillRRect(paint.Rect(geom.Rect{W: geom.Px(w), H: geom.Px(h)}), paint.Opaque(255, 255, 255))
 	d.Paint(l)
-	r.Begin(img, paint.Scale64(scale))
-	l.Replay(r)
-	r.End()
 }
 
 // ---- Painting ----

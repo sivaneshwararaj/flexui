@@ -21,6 +21,8 @@ Public API (keep small, documented, semver `v0.x`):
 | `flexui` (repo root) | `RenderHTML`, `CheckHTML`; `App`, `Options`, `Ctx`, `Handler`: `New`, `SetView`, `SetViewFunc`, `Handle`, `Invalidate`, `Bounds`, `Config`, `Warnings`; implements `platform.AppHandler` (Frame renders the view through `internal/view`; Event translates platform events and runs handlers). |
 | `platform` | `Platform` / `AppHandler` / `Event` / `Clipboard` interfaces. |
 | `platform/darwin` | macOS window via purego: `Run(app)`, `Open`/`Window` (layer presentation, event translation), `Clipboard`; `stages/stageN` verification commands. Compile-checked only. |
+| `platform/windows` | Windows window via x/sys/windows: `Run(app)`, `Open`/`Window` (DIB presentation, message translation), `Clipboard`; `stages/stageN`. Compile-checked only. |
+| `platform/internal/stagekit` | Shared content of the stage commands (pattern, pages, apps, expectations). |
 | `platform/headless` | Reference backend for tests; `Render(app, "out.png")`, `RenderImage`, and `Session` (`Start`, `Click`, `Press`, `Move`, `Wheel`, `Key`, `Resize`, `Frame`) to step synthetic events. |
 
 Implementation (`internal/`, free to change):
@@ -218,3 +220,15 @@ declaration strings. Each case is checked two ways:
   (`render.InputState`), so editing only repaints (no restyle or
   relayout). `render/input.go` draws text, placeholder, selection and
   caret, and offers geometry helpers (`InputCaretX`, `InputContent`).
+
+## Incremental frames
+
+* `paint/damage.go`: `Raster.Damage(prev, next)` diffs two display lists
+  into device rectangles (op-by-op, or prefix/suffix splicing when the
+  structure changed); `BeginClip` replays a list inside one rectangle.
+* `view.paint`: double-buffered lists (`lists[cur]`), damage repaint or
+  full repaint, dirty rectangles copied to the platform buffer when it is
+  the same image; `verify` / `verifyRestyle` under `FLEXUI_CHECK_DAMAGE`.
+* `render/restyle.go`: `Document.Restyle(nodes)` recomputes styles of the
+  elements whose pseudo-class state changed, in place, when
+  `style.SameLayout` holds for all of them.

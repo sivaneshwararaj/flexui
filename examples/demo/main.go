@@ -4,7 +4,7 @@
 // or in a window on macOS:
 //
 //	go run ./demo            # writes demo-*.png
-//	go run ./demo -window    # macOS window
+//	go run ./demo -window    # macOS or Windows window
 package main
 
 import (
@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-	window := flag.Bool("window", false, "open a native window (macOS)")
+	window := flag.Bool("window", false, "open a native window (macOS, Windows)")
 	flag.Parse()
 	d := NewDemo()
 	if *window {

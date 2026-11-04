@@ -1,10 +1,22 @@
 # platform/darwin: macOS window (purego, no cgo)
 
-**Status: written and compile-checked only.** This backend was written on
-Linux. It builds and passes `go vet` for `darwin/arm64` and
-`darwin/amd64` with `CGO_ENABLED=0` (`scripts/check-portability.sh`), but
-it has **never been run**. Nothing here is claimed to work until the
-stages below pass on a Mac.
+**Status: partly verified on a Mac.** This backend was written on Linux
+and compile-checked there for `darwin/arm64` and `darwin/amd64` with
+`CGO_ENABLED=0`. The user ran the stages on a MacBook Air (Apple
+silicon, macOS 27.2, build 26B123, Retina, scale 2):
+
+| Stage | Result |
+|---|---|
+| 1 | Pass: frameworks load, NSApplication found, version printed, no window. |
+| 2 | Pass: window opens; quadrants red/green/blue/white in the right places (orientation and channel order correct). Colors look shifted on screen because the frame is tagged sRGB and macOS converts it to the display's color space (expected). |
+| 3 | Pass: page sharp at 2x; `identical: true` (presented frame byte-identical to the headless render). |
+| 4 | Pass at the initial size: `460x320 @2x`, boxes wrap three per row. Live resizing and a move to a display with another scale were not reported. |
+| 5 | Pass: clicks change the count, list items select, the list scrolls with the scrollbar shown, a focus border moves to the buttons. Hover highlighting was not visible in the screenshot (pointer elsewhere). |
+| 6 | Not reported yet (text input, system clipboard). |
+| 7 | Pass: `darwin.Run(app)`; the count reached 80 with the note shown. |
+
+Everything not in a "Pass" line above (resizing, scale changes, text
+input and the clipboard, `-debug` logs, amd64 Macs) is still untested.
 
 ## How it works
 
@@ -61,9 +73,14 @@ go test ./internal/render -run TestHashes
 go test ./...
 ```
 
-## Untested (everything), and specific risks
+## Untested parts and specific risks
 
-* **All of it has only been compiled.** In particular:
+Stages 1-5 and 7 confirm window creation, presentation, Retina scale,
+pointer clicks, scrolling and keyboard focus on Apple silicon. Still
+unverified:
+
+* Text input and the clipboard (stage 6), resizing, backing-scale
+  changes, Intel (amd64) Macs. Risks noted before running:
   * Struct arguments and returns through `objc_msgSend` via purego
     (`NSRect` to `initWithContentRect:...`, `bounds`, `locationInWindow`,
     `convertPoint:fromView:`), especially `stret` returns on amd64.

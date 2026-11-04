@@ -1,6 +1,6 @@
 # Status
 
-Last updated after M9. Next steps: run the macOS stages on a Mac (M7 verification), IME composition (rest of M8).
+Last updated after the first macOS run (stages 1-5, 7 pass). Next steps: stage 6 results, IME composition (rest of M8).
 
 | Milestone | State |
 |---|---|
@@ -12,8 +12,9 @@ Last updated after M9. Next steps: run the macOS stages on a Mac (M7 verificatio
 | M5 Handlers and state | done |
 | M6 Interaction | done |
 | M5b Inline formatting, images, default styles, disabled, focus events, scrollbars | done |
-| M7 Portability gate + macOS | gate done; macOS window written and compile-checked only, **never run** (see platform/darwin/README.md) |
+| M7 Portability gate + macOS | gate done; macOS stages 1-5 and 7 passed on an Apple-silicon Mac (macOS 27.2); stage 6 (text input, clipboard), resizing and Intel Macs unverified |
 | M8 Text input | M8a done (editing model, headless); IME composition with the macOS step |
+| Windows backend | written and compile-checked (windows/amd64, arm64); **never run** (see platform/windows/README.md) |
 | M9 Demo app | done headless (`examples/demo`); the window is untested |
 
 ## Works
@@ -97,6 +98,13 @@ Last updated after M9. Next steps: run the macOS stages on a Mac (M7 verificatio
   and shaped text are cached across rebuilds; idle frames copy the
   retained image (about 11 µs at 280x220), a click with re-render about
   1.1 ms. Hit testing follows paint order exactly (shared traversal).
+* Windows backend (`platform/windows`, x/sys/windows): Win32 window,
+  per-monitor DPI awareness, frames drawn with `SetDIBitsToDevice`,
+  mouse/wheel/keys/`WM_CHAR` text, clipboard, `windows.Run(app)`; seven
+  staged commands with `EXPECT`/`RESULT` lines and `-debug` logs (shared
+  content in `platform/internal/stagekit`); `examples/counter` and
+  `examples/demo` take `-window` on Windows too. **It compiles for
+  windows/amd64 and windows/arm64 but has never been run.**
 * Demo app (M9, `examples/demo`): a contacts manager (searchable list
   with selection and scrolling, edit form with Save/Revert enabled only
   when dirty, delete confirmation modal with Escape and backdrop click,
@@ -104,6 +112,22 @@ Last updated after M9. Next steps: run the macOS stages on a Mac (M7 verificatio
   A scripted headless session produces 8 states compared byte for byte
   with goldens in `examples/demo/testdata` (also on linux/386);
   `go run ./demo -window` opens it on macOS (untested).
+* Performance (demo, 214 contacts, 2560x1600 device pixels = 1280x800
+  @2x, one event + one frame, 4-core cloud VM; `cd examples && go test
+  ./demo -run xxx -bench Frame`):
+
+  | case | before | after |
+  |---|---|---|
+  | idle | 1.6 ms | 0.08 ms |
+  | hover change | 51 ms | 2.2 ms |
+  | typing (re-render) | 56 ms | 14 ms |
+  | scrolling 30px | 51 ms | 7.4 ms |
+
+  From: border painting limited to the border ring, damage-region
+  repainting and copying, incremental paint-only restyle, faster opaque
+  fills (all byte-identical to full repaints; checked by
+  `FLEXUI_CHECK_DAMAGE` in every app/demo test). Typing still re-parses,
+  re-lays out and repaints the changed region (the HTML changes).
 * Interaction (M6): hit testing in exact paint order (z-index, stacking
   contexts, overflow clips; checked pixel-by-pixel against the painted
   output on random documents), `:hover`/`:active`/`:focus` restyling only
@@ -172,8 +196,10 @@ Last updated after M9. Next steps: run the macOS stages on a Mac (M7 verificatio
   presentation at the backing scale, resize, mouse/wheel/keys, typed
   text, system clipboard, `darwin.Run(app)`; seven staged commands with
   `EXPECT`/`RESULT` lines and `-debug` logs; `examples/counter -window`.
-  **It compiles for darwin/arm64 and darwin/amd64 but has never been run;
-  nothing about it is verified.** Untested parts are listed in
+  Verified by the user on an Apple-silicon MacBook Air (macOS 27.2,
+  scale 2): stages 1-5 and 7 pass, including a byte-identical
+  presented frame (stage 3). Not yet verified: stage 6 (text input,
+  clipboard), live resizing and scale changes, Intel Macs. Details in
   `platform/darwin/README.md`.
 
 ## Stubbed
@@ -215,6 +241,7 @@ Last updated after M9. Next steps: run the macOS stages on a Mac (M7 verificatio
 * Rasterizer speed: the shadow blur dominates (about half of a card
   frame).
 * Glyph masks are cached per face (cleared at 32k entries).
-* A pseudo-class change restyles and re-lays-out the whole document (only
-  when some rule uses that pseudo-class); fine for app-sized documents,
-  but there is no per-subtree invalidation.
+* A change of the view's HTML (e.g. typing into a controlled input)
+  re-parses, restyles and lays out the whole document (no tree diffing);
+  about 14 ms for the demo at 2560x1600. Pseudo-class changes that affect
+  layout (e.g. bold on hover) also rebuild everything.

@@ -8,8 +8,11 @@
 package view
 
 import (
+	"bytes"
+	"fmt"
 	"image"
 	"io/fs"
+	"os"
 
 	"github.com/sivaneshwararaj/flexui/internal/dom"
 	"github.com/sivaneshwararaj/flexui/internal/geom"
@@ -20,10 +23,13 @@ import (
 
 // Stats counts the work done, for tests and tuning.
 type Stats struct {
-	Frames int // Frame calls
-	Parses int // HTML parses
-	Copies int // frames served from the retained image without painting
-	Render render.Stats
+	Restyles    int   // incremental (paint-only) restyles
+	Damaged     int   // frames repainted only in damaged rectangles
+	DamagePixel int64 // device pixels repainted in those frames
+	Frames      int   // Frame calls
+	Parses      int   // HTML parses
+	Copies      int   // frames served from the retained image without painting
+	Render      render.Stats
 }
 
 // View is a live document.
@@ -43,9 +49,19 @@ type View struct {
 
 	needStyle, needLayout, needPlace, needPaint bool
 
-	frame  *image.RGBA // retained output of the last paint
-	list   paint.List
-	raster paint.Raster
+	frame   *image.RGBA // retained output of the last paint
+	lists   [2]paint.List
+	cur     int  // lists[cur] is the display list of frame
+	hasList bool // lists[cur] is valid for frame
+	raster  paint.Raster
+	scratch *image.RGBA // FLEXUI_CHECK_DAMAGE: full repaint for comparison
+	check   bool
+	// The platform buffer the last frame was copied into and the device
+	// rectangles painted since (nil: all), so the same buffer only
+	// gets the changed pixels.
+	lastBuf *image.RGBA
+	dirty   []image.Rectangle
+	full    bool
 
 	// Pointer state.
 	down       *dom.Node // element under the pointer at pointer down
@@ -62,6 +78,7 @@ type View struct {
 	focusKey             string // key of the focused element, kept across rebuilds
 	hoverStale           bool   // hover must be recomputed after the next placement
 	space                *dom.Node
+	restyle              []*dom.Node           // elements whose pseudo-class state changed
 	scroll               map[string]geom.Point // scroll offsets by element key
 	inputs               map[string]*inputState
 	selecting            *dom.Node // input whose text is being selected by dragging
@@ -73,7 +90,8 @@ type View struct {
 // New returns an empty view.
 func New() *View {
 	return &View{cache: render.NewCache(), needStyle: true, scroll: map[string]geom.Point{},
-		inputs: map[string]*inputState{}, clip: &memClipboard{}}
+		inputs: map[string]*inputState{}, clip: &memClipboard{},
+		check: os.Getenv("FLEXUI_CHECK_DAMAGE") != ""}
 }
 
 // SetAssets sets the file system <img src> paths are read from.
@@ -120,6 +138,19 @@ func (v *View) update(w, h int) {
 			v.syncInputs()
 			v.needStyle = true
 		}
+		if !v.needStyle && len(v.restyle) > 0 {
+			// Incremental restyle: paint-only changes keep the layout.
+			if v.doc.Restyle(v.restyle) {
+				v.needPaint = true
+				v.stats.Restyles++
+				if v.check {
+					v.verifyRestyle()
+				}
+			} else {
+				v.needStyle = true
+			}
+		}
+		v.restyle = v.restyle[:0]
 		if v.needStyle {
 			v.doc = v.cache.Style(v.parsed, v.css)
 			v.doc.Input = v.inputView
@@ -140,7 +171,7 @@ func (v *View) update(w, h int) {
 		if v.hoverStale && v.hasPointer {
 			v.hoverStale = false
 			v.setHover(v.hitDoc(v.pointer.X, v.pointer.Y))
-			if v.needStyle {
+			if v.needStyle || len(v.restyle) > 0 {
 				continue
 			}
 		}
@@ -152,6 +183,7 @@ func (v *View) update(w, h int) {
 // focus by element key; active and hover are recomputed from input.
 func (v *View) rebind() {
 	v.hover, v.active, v.down, v.space, v.dragging = nil, nil, nil, nil, nil
+	v.restyle = v.restyle[:0]
 	v.pressed = false
 	v.focus = nil
 	if v.focusKey != "" {
@@ -165,8 +197,10 @@ func (v *View) rebind() {
 	v.hoverStale = true
 }
 
-func (v *View) place() {
-	v.doc.Place(func(b *render.Box) geom.Point {
+func (v *View) place() { v.placeDoc(v.doc) }
+
+func (v *View) placeDoc(d *render.Document) {
+	d.Place(func(b *render.Box) geom.Point {
 		if b.Style.Overflow != style.OverflowScroll {
 			return geom.Point{}
 		}
@@ -193,14 +227,109 @@ func (v *View) Frame(buf *image.RGBA, w, h int, scale float64) {
 		v.frame = image.NewRGBA(buf.Rect)
 		v.scale = scale
 		v.needPaint = true
+		v.hasList = false
 	}
 	if v.needPaint {
-		v.doc.Draw(v.frame, w, h, scale, &v.list, &v.raster)
+		v.paint(w, h)
 		v.needPaint = false
 	} else {
 		v.stats.Copies++
 	}
-	copy(buf.Pix, v.frame.Pix)
+	// Copy to the platform's buffer: only what changed when it is the
+	// same buffer as last time (platforms must not modify it in between).
+	if buf != v.lastBuf || v.full {
+		copy(buf.Pix, v.frame.Pix)
+	} else {
+		for _, r := range v.dirty {
+			for y := r.Min.Y; y < r.Max.Y; y++ {
+				i := buf.PixOffset(r.Min.X, y)
+				copy(buf.Pix[i:i+4*r.Dx()], v.frame.Pix[i:i+4*r.Dx()])
+			}
+		}
+	}
+	v.lastBuf, v.dirty, v.full = buf, v.dirty[:0], false
+}
+
+// paint repaints the retained frame (spec/SUBSET.md §6.6): the new display
+// list is compared with the previous one, and only the damaged device
+// rectangles are repainted, unless the structure changed or most of the
+// frame is damaged.
+func (v *View) paint(w, h int) {
+	s64 := paint.Scale64(v.scale)
+	next := 1 - v.cur
+	nl := &v.lists[next]
+	v.doc.Record(nl, w, h)
+	var rects []image.Rectangle
+	ok := false
+	if v.hasList {
+		rects, ok = v.raster.Damage(&v.lists[v.cur], nl, s64, v.frame.Rect)
+	}
+	var area int64
+	for _, r := range rects {
+		area += int64(r.Dx()) * int64(r.Dy())
+	}
+	frameArea := int64(v.frame.Rect.Dx()) * int64(v.frame.Rect.Dy())
+	switch {
+	case ok && len(rects) == 0:
+		// Nothing visible changed.
+	case ok && area*10 < frameArea*6:
+		for _, r := range rects {
+			v.raster.BeginClip(v.frame, s64, r)
+			nl.Replay(&v.raster)
+			v.raster.End()
+		}
+		v.dirty = append(v.dirty, rects...)
+		v.stats.Damaged++
+		v.stats.DamagePixel += area
+		if v.check {
+			v.verify(nl, s64)
+		}
+	default:
+		v.raster.Begin(v.frame, s64)
+		nl.Replay(&v.raster)
+		v.raster.End()
+		v.full = true
+	}
+	v.cur, v.hasList = next, true
+}
+
+// verifyRestyle (FLEXUI_CHECK_DAMAGE=1) rebuilds and lays out the
+// document from scratch and panics if its display list differs from the
+// incrementally restyled one.
+func (v *View) verifyRestyle() {
+	saved := v.cache.Stats
+	defer func() { v.cache.Stats = saved }()
+	full := v.cache.Style(v.parsed, v.css)
+	full.Input = v.inputView
+	full.Layout(v.w, v.h)
+	v.placeDoc(full)
+	var a, b paint.List
+	full.Record(&a, v.w, v.h)
+	v.doc.Record(&b, v.w, v.h)
+	if !paint.SameList(&a, &b) {
+		panic("view: incremental restyle differs from a full restyle")
+	}
+}
+
+// verify (FLEXUI_CHECK_DAMAGE=1) repaints the whole frame and panics if
+// it differs from the incrementally repainted one.
+func (v *View) verify(l *paint.List, s64 int64) {
+	if v.scratch == nil || v.scratch.Rect != v.frame.Rect {
+		v.scratch = image.NewRGBA(v.frame.Rect)
+	}
+	var r paint.Raster
+	r.Begin(v.scratch, s64)
+	l.Replay(&r)
+	r.End()
+	if !bytes.Equal(v.scratch.Pix, v.frame.Pix) {
+		n := 0
+		for i := range v.frame.Pix {
+			if v.frame.Pix[i] != v.scratch.Pix[i] {
+				n++
+			}
+		}
+		panic(fmt.Sprintf("view: damage repaint differs from a full repaint in %d bytes", n))
+	}
 }
 
 // Document returns the current document, brought up to date for the last

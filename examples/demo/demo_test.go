@@ -131,3 +131,38 @@ func golden(t *testing.T, name string, img *image.RGBA) {
 		t.Errorf("%s: %d pixels differ from the golden", name, n)
 	}
 }
+
+// TestStatusClearedOnSelect is a regression test: the "Saved ..." line
+// used to stay when another contact was selected.
+func TestStatusClearedOnSelect(t *testing.T) {
+	d := NewDemo()
+	s := headless.Start(d.App)
+	s.Click(center(d.App, "notes"))
+	s.Type(" Edited.")
+	s.Click(center(d.App, "save"))
+	if d.Status() != "Saved Ada Lovelace." {
+		t.Fatalf("status after save: %q", d.Status())
+	}
+	if _, _, _, _, ok := d.App.Bounds("status"); !ok {
+		t.Fatal("status line not shown after save")
+	}
+	// Select the second contact in the list.
+	_, ly, _, _, _ := d.App.Bounds("list")
+	lx, _ := center(d.App, "list")
+	s.Click(lx, ly+1+49+24)
+	if d.Draft().Name != "Alan Turing" {
+		t.Fatalf("selected %q", d.Draft().Name)
+	}
+	if d.Status() != "" {
+		t.Errorf("status after selecting another contact: %q", d.Status())
+	}
+	if _, _, _, _, ok := d.App.Bounds("status"); ok {
+		t.Error("status line still shown after selecting another contact")
+	}
+	// Revert also clears it; delete and add keep their own messages.
+	s.Click(center(d.App, "delete"))
+	s.Click(center(d.App, "confirm"))
+	if d.Status() != "Deleted Alan Turing." {
+		t.Errorf("status after delete: %q", d.Status())
+	}
+}
