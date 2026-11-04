@@ -1,6 +1,6 @@
 # Status
 
-Last updated after M5b. Next steps: M8a (input editing), M7 (macOS window), M9 (demo).
+Last updated after M8a. Next steps: M7 (macOS window), M9 (demo).
 
 | Milestone | State |
 |---|---|
@@ -13,7 +13,7 @@ Last updated after M5b. Next steps: M8a (input editing), M7 (macOS window), M9 (
 | M6 Interaction | done |
 | M5b Inline formatting, images, default styles, disabled, focus events, scrollbars | done |
 | M7 Portability gate + macOS | portability script exists and passes; darwin not started |
-| M8 Text input | not started |
+| M8 Text input | M8a done (editing model, headless); IME composition with the macOS step |
 | M9 Demo app | not started |
 
 ## Works
@@ -80,6 +80,12 @@ Last updated after M5b. Next steps: M8a (input editing), M7 (macOS window), M9 (
   buttons and inputs, with `:hover/:active/:focus/:disabled`; `disabled`
   buttons and inputs; `onfocus`/`onblur`; overlay scrollbars with
   draggable thumbs.
+* Text inputs (M8a): `internal/edit` buffer (graphemes, words,
+  selection), keyboard editing and movement, committed text events,
+  clipboard copy/cut/paste (`App.SetClipboard`, headless in-memory),
+  pointer caret placement and drag selection, horizontal scrolling,
+  placeholder, `oninput`/`onchange`, controlled and uncontrolled values
+  (`App.Value`), editing state kept across re-renders.
 * Handlers and state (M5): `onclick="Name"` bound with `App.Handle`,
   bubbling with `Ctx.StopPropagation`, `Ctx.Attr`, click = press+release
   on the common ancestor, `SetViewFunc` re-run after handlers or
@@ -161,9 +167,11 @@ Last updated after M5b. Next steps: M8a (input editing), M7 (macOS window), M9 (
   padding, borders or margins (warning).
 * `<img>`: no `object-fit`, no mipmaps (strong downscaling aliases), no
   animated images, no other formats.
-* `<input>`: a styled one-line box; editing comes with M8.
-* Handlers: `onclick`, `onkeydown`, `onfocus`, `onblur`; `oninput` and
-  `onchange` come with M8.
+* `<input>`: no IME composition, undo, double-click selection,
+  autoscroll while selecting, `maxlength`/`readonly`/password; the caret
+  does not blink (D31).
+* Handlers: `onclick`, `onkeydown`, `onfocus`, `onblur`, `oninput`,
+  `onchange`.
 * Scrolling: overlay scrollbars only (D25), no keyboard scrolling, no
   track clicks, no inertia; no scrolling of `body` itself unless it has
   `overflow: scroll`.

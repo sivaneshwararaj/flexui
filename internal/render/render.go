@@ -62,6 +62,10 @@ type Document struct {
 	boxes   map[*dom.Node]*Box
 	styles  map[*dom.Node]*style.Style // computed styles of this build
 	cascade *style.Cascade
+
+	// Input returns the editing state of an <input> (set by the view; nil
+	// draws inputs empty).
+	Input func(n *dom.Node) InputState
 }
 
 // Affects reports whether changing pseudo-class flag on element n can
@@ -347,7 +351,7 @@ type visitor interface {
 // is an ordinary positioned element inside it (as in CSS, where the root
 // context is <html>). So negative z-index boxes paint behind body's
 // background, exactly as in browsers.
-func (d *Document) Paint(c paint.Canvas) { d.visit(painter{c}) }
+func (d *Document) Paint(c paint.Canvas) { d.visit(painter{c, d}) }
 
 func (d *Document) visit(v visitor) {
 	canvas := &Box{Style: style.Initial(), Lay: &layout.Node{}, Kids: []*Box{d.Root}}
@@ -458,13 +462,19 @@ func (d deferred) visit(v visitor) {
 }
 
 // painter is the visitor that draws.
-type painter struct{ c paint.Canvas }
+type painter struct {
+	c paint.Canvas
+	d *Document
+}
 
 func (p painter) box(b *Box) {
 	if b.El != nil {
 		b.paintBox(p.c)
 		if b.Image != nil {
 			b.paintImage(p.c)
+		}
+		if b.El.Tag() == "input" && p.d.Input != nil {
+			p.d.paintInput(p.c, b, p.d.Input(b.El))
 		}
 	}
 }

@@ -199,3 +199,16 @@ func hasAttr(h *html.Node, name string) bool {
 
 // Disabled reports whether n is a disabled button or input.
 func (n *Node) Disabled() bool { return n.Dyn&style.StateDisabled != 0 }
+
+// FindID returns the first element with the given id at or below n.
+func (n *Node) FindID(id string) *Node {
+	if n.Kind == ElementNode && n.id == id {
+		return n
+	}
+	for _, c := range n.Children {
+		if r := c.FindID(id); r != nil {
+			return r
+		}
+	}
+	return nil
+}

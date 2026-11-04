@@ -86,6 +86,9 @@ type Ctx struct {
 	Key string
 	// Mods holds the modifier keys of key events (platform.ModShift, ...).
 	Mods uint8
+	// Value is the text of the input the event is about (input, change,
+	// and key events in an input).
+	Value string
 }
 
 // App returns the application the event belongs to.
@@ -243,7 +246,27 @@ func (a *App) Event(e platform.Event) {
 		a.view.KeyDown(e.Key, e.Mods, e.Mods&platform.ModShift != 0)
 	case platform.EventKeyUp:
 		a.view.KeyUp(e.Key)
+	case platform.EventText:
+		a.view.Text(e.Text)
 	}
+}
+
+// Value returns the current text of the <input> with the given id, as
+// edited by the user (spec/SUBSET.md §8.6).
+func (a *App) Value(id string) string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	s, _ := a.view.InputValue(id)
+	return s
+}
+
+// SetClipboard sets the clipboard used for copy, cut and paste in inputs.
+// Platforms call it with the system clipboard; the default is an
+// in-memory clipboard.
+func (a *App) SetClipboard(c platform.Clipboard) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.view.SetClipboard(c)
 }
 
 // Focus focuses the element with the given id ("" blurs), as if it had
@@ -284,7 +307,7 @@ func (a *App) call(ev *view.Event) bool {
 		return false
 	}
 	c := &Ctx{app: a, ev: ev, Event: ev.Type, ID: ev.Current.ID(), TargetID: ev.Target.ID(),
-		X: ev.X.Float(), Y: ev.Y.Float(), Key: ev.Key, Mods: ev.Mods}
+		X: ev.X.Float(), Y: ev.Y.Float(), Key: ev.Key, Mods: ev.Mods, Value: ev.Value}
 	h(c)
 	a.dirty.Store(true)
 	return c.stop

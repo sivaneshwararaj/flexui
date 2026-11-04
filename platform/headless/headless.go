@@ -24,8 +24,17 @@ type Platform struct {
 // Inject queues an event for delivery during Run.
 func (p *Platform) Inject(e platform.Event) { p.Events = append(p.Events, e) }
 
+// ClipboardUser is implemented by apps that use a clipboard
+// (*flexui.App); platforms hand them theirs.
+type ClipboardUser interface {
+	SetClipboard(platform.Clipboard)
+}
+
 // Run implements platform.Platform.
 func (p *Platform) Run(cfg platform.Config, app platform.AppHandler) error {
+	if cu, ok := app.(ClipboardUser); ok {
+		cu.SetClipboard(p)
+	}
 	scale := cfg.Scale
 	if scale == 0 {
 		scale = 1
@@ -96,6 +105,8 @@ type Session struct {
 	w, h  int
 	scale float64
 	frame *image.RGBA
+	// Clipboard is the session's in-memory clipboard, given to the app.
+	Clipboard Platform
 }
 
 // Start renders the first frame of app at its configured size.
@@ -104,6 +115,9 @@ func Start(app App) *Session {
 	s := &Session{app: app, w: cfg.Width, h: cfg.Height, scale: cfg.Scale}
 	if s.scale == 0 {
 		s.scale = 1
+	}
+	if cu, ok := app.(ClipboardUser); ok {
+		cu.SetClipboard(&s.Clipboard)
 	}
 	s.render()
 	return s
@@ -171,6 +185,12 @@ func (s *Session) Wheel(x, y, dx, dy float64) {
 func (s *Session) Key(key string, mods uint8) {
 	s.Send(platform.Event{Kind: platform.EventKeyDown, Key: key, Mods: mods})
 	s.Send(platform.Event{Kind: platform.EventKeyUp, Key: key, Mods: mods})
+}
+
+// Type sends committed text, as a keyboard or input method does for
+// printable characters.
+func (s *Session) Type(text string) {
+	s.Send(platform.Event{Kind: platform.EventText, Text: text})
 }
 
 // Resize changes the surface size.

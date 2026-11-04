@@ -134,9 +134,17 @@ func (v *View) setFocus(n *dom.Node) {
 	v.focus = n
 	if old != n {
 		if old != nil {
+			if st := v.input(old); st != nil {
+				v.changed(old, st) // change fires before blur, as in browsers
+				v.needPaint = true
+			}
 			v.dispatchSelf(&Event{Type: "blur", Target: old})
 		}
 		if n != nil {
+			if st := v.input(n); st != nil {
+				st.atFocus = st.buf.String()
+				v.needPaint = true
+			}
 			v.dispatchSelf(&Event{Type: "focus", Target: n})
 		}
 	}

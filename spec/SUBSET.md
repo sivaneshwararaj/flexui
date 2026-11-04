@@ -760,6 +760,53 @@ clip. A 1:1 mapping copies source pixels exactly.
   shown while content overflows. There is no keyboard scrolling, no track
   clicking and no inertia yet.
 
+### 8.6 Text inputs (M8a)
+
+* An `<input>` holds an editable single line (`internal/edit`): text,
+  caret and selection anchor, on grapheme cluster boundaries. Newlines
+  and control characters are dropped from inserted text; tabs become
+  spaces.
+* **Value**: the `value` attribute sets the text when the input first
+  appears and whenever the attribute changes between renders (if it
+  differs from the current text); otherwise the user's text stays. So
+  both patterns work: a controlled input (`value="{{.Name}}"` plus an
+  `oninput` handler storing `Ctx.Value`) keeps its caret while typing,
+  and an uncontrolled input keeps its edits across re-renders.
+  `App.Value(id)` reads the current text. State is kept by element key
+  (§8.2).
+* **Typing**: platforms send committed text (`EventText`;
+  `headless.Session.Type`). Keys, after `onkeydown` handlers (which can
+  `PreventDefault`):
+
+  | Key | Action (Shift extends the selection) |
+  |---|---|
+  | ArrowLeft / ArrowRight | one grapheme; with Alt or Ctrl one word; with Meta to the line start/end |
+  | Home / End, ArrowUp / ArrowDown | to the start / end |
+  | Backspace / Delete | the selection, else one grapheme (Alt/Ctrl: word, Meta: to the start/end) |
+  | Ctrl/Meta + A, C, X, V | select all, copy, cut, paste (`App.SetClipboard`; in-memory by default) |
+  | Enter | `change` event if the value changed |
+  | Tab | focus traversal (§8.4) |
+
+  Words: a word is a run of letters, digits, `_` and `'`; moving left goes
+  to the start of the previous word, right to the end of the next one
+  (macOS behavior, also used elsewhere).
+* **Pointer**: pressing in a focusable input focuses it and puts the caret
+  at the nearest grapheme boundary; dragging extends the selection (the
+  text does not autoscroll while dragging).
+* **Events**: `oninput` after every change of the text (typing, deletion,
+  cut, paste) and `onchange` when the input loses focus or Enter is
+  pressed, if the value differs from the last `change` or from when it
+  was focused (as in browsers, `change` comes before `blur`). Both bubble;
+  `Ctx.Value` holds the text.
+* **Drawing**: the text (or the `placeholder` attribute, gray, when
+  empty) on one line, vertically centered and clipped to the content box,
+  scrolled horizontally so the caret stays visible. While focused, a
+  1px caret in the text color (or a light blue selection highlight).
+* Not supported yet: IME composition (macOS step, M8), undo, double-click
+  word selection, autoscroll while drag-selecting, `maxlength`,
+  `readonly`, password fields. **D31**: the caret does not blink (frames
+  are deterministic; a platform may add blinking later).
+
 ## 5. Verification
 
 Layout behavior is checked against Chromium:

@@ -13,6 +13,7 @@ type Event struct {
 	Name    string    // handler name from the on<type> attribute
 	X, Y    geom.Unit // pointer position (pointer events)
 	Key     string    // key name (key events)
+	Value   string    // the input's text (input, change, and key events on inputs)
 	Mods    uint8     // modifier keys (key events)
 	// Prevented is set by a handler to suppress the default action (for
 	// keydown: focus traversal and activation).
@@ -75,6 +76,11 @@ func (v *View) PointerMove(x, y geom.Unit) {
 	}
 	if v.pressed && v.thumb != nil {
 		v.dragThumb(x, y)
+	} else if v.pressed && v.selecting != nil {
+		if st := v.input(v.selecting); st != nil {
+			st.buf.SetCaret(v.indexAt(v.selecting, st, x), true)
+			v.reveal(v.selecting, st)
+		}
 	} else if v.pressed {
 		if v.dragging == nil && (abs(x-v.downAt.X) > dragSlop || abs(y-v.downAt.Y) > dragSlop) {
 			if sc := v.scrollerFor(v.down); sc != nil {
@@ -117,6 +123,11 @@ func (v *View) PointerDown(x, y geom.Unit) {
 		}
 	}
 	v.setFocus(f)
+	if st := v.input(f); st != nil && f == v.down {
+		st.buf.SetCaret(v.indexAt(f, st, x), false)
+		v.selecting = f
+		v.reveal(f, st)
+	}
 }
 
 // PointerUp handles the release; a press and release form a click on
@@ -128,6 +139,7 @@ func (v *View) PointerUp(x, y geom.Unit) bool {
 		return false
 	}
 	v.pressed = false
+	v.selecting = nil
 	v.setActive(nil)
 	if v.thumb != nil {
 		v.thumb, v.down = nil, nil
@@ -186,9 +198,17 @@ func (v *View) KeyDown(k string, mods uint8, shift bool) bool {
 		t = d.Dom.Root
 	}
 	ev := &Event{Type: "keydown", Target: t, Key: k, Mods: mods}
+	if st := v.input(v.focus); st != nil {
+		ev.Value = st.buf.String()
+	}
 	ran := v.dispatch(ev)
 	if ev.Prevented {
 		return ran
+	}
+	if st := v.input(v.focus); st != nil && !v.focus.Disabled() && k != "Tab" {
+		if v.editKey(v.focus, st, k, mods) {
+			return true
+		}
 	}
 	switch k {
 	case "Tab":

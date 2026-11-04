@@ -6,6 +6,10 @@ versioning with `v0.x` tags until the API settles.
 ## Unreleased
 
 ### Added
+- M8a text inputs: editing model (`internal/edit`), keyboard editing and
+  movement, clipboard (`App.SetClipboard`), pointer caret and selection,
+  placeholder, `oninput`/`onchange`, `Ctx.Value`, `App.Value`,
+  `platform.EventText` handling, `headless.Session.Type` and `Clipboard`.
 - M5b: inline formatting across `span`, `a`, `strong`/`b`, `em`/`i`,
   `br` (mixed sizes, weights, line heights, colors, backgrounds); `<img>`
   (PNG/JPEG, `data:` URLs or `Options.Assets`); a default style sheet for

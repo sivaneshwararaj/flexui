@@ -32,6 +32,7 @@ Implementation (`internal/`, free to change):
 | `internal/paint` | `Canvas` draw interface (incl. `Glyphs` runs over a `GlyphSource`), `List` display list, `Raster` integer-only software rasterizer. | `geom` |
 | `internal/dom` | HTML → node tree (`<body>` root, `<style>` collection); `*dom.Node` implements `style.Element`. | `golang.org/x/net/html`, `style` |
 | `internal/render` | dom → cascade → layout → paint order (stacking contexts) → display list → raster. `Parse`, `Cache.Style` (sheet and text caches), `Document.Layout/Place/Paint/Draw/HitTest`, `Build`, `Render`. | all of the above |
+| `internal/edit` | Single-line text editing model (`Buffer`: graphemes, words, selection). | `go-text/typesetting/segmenter` |
 | `internal/view` | Live document between frames: staged invalidation (parse/style/layout/place/paint), retained frame, hit testing, event dispatch (bubbling) to a handler callback; interaction state (M6). | `render`, `dom` |
 | `internal/text` | Bundled Inter faces, shaping (font units), line breaking, `Text` layout (lines, intrinsic widths, ellipsis), glyph rasterizer (`paint.GlyphSource`). | `go-text/typesetting`, `geom`, `style`, `paint` |
 
@@ -203,3 +204,14 @@ declaration strings. Each case is checked two ways:
   by the painter inside the container's clip; `view/scrollbar.go` drags
   thumbs.
 * `render/input.go`: `<input>` measuring (one line, 160px).
+
+## Text inputs (M8a)
+
+* `internal/edit.Buffer` is the pure model. `view/input.go` keeps one per
+  input (`inputs`, by element key), synced with the `value` attribute in
+  `syncInputs` after each parse, maps keys/text/pointer to edits, keeps
+  the caret visible (`reveal`), and dispatches `input`/`change`.
+* Rendering reads the state at paint time through `Document.Input`
+  (`render.InputState`), so editing only repaints (no restyle or
+  relayout). `render/input.go` draws text, placeholder, selection and
+  caret, and offers geometry helpers (`InputCaretX`, `InputContent`).

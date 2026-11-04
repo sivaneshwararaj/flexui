@@ -63,13 +63,17 @@ type View struct {
 	hoverStale           bool   // hover must be recomputed after the next placement
 	space                *dom.Node
 	scroll               map[string]geom.Point // scroll offsets by element key
+	inputs               map[string]*inputState
+	selecting            *dom.Node // input whose text is being selected by dragging
+	clip                 Clipboard
 
 	stats Stats
 }
 
 // New returns an empty view.
 func New() *View {
-	return &View{cache: render.NewCache(), needStyle: true, scroll: map[string]geom.Point{}}
+	return &View{cache: render.NewCache(), needStyle: true, scroll: map[string]geom.Point{},
+		inputs: map[string]*inputState{}, clip: &memClipboard{}}
 }
 
 // SetAssets sets the file system <img src> paths are read from.
@@ -113,10 +117,12 @@ func (v *View) update(w, h int) {
 			v.stats.Parses++
 			v.parsed = render.Parse(v.html)
 			v.rebind()
+			v.syncInputs()
 			v.needStyle = true
 		}
 		if v.needStyle {
 			v.doc = v.cache.Style(v.parsed, v.css)
+			v.doc.Input = v.inputView
 			v.needStyle, v.needLayout = false, true
 		}
 		if v.needLayout || w != v.w || h != v.h {
