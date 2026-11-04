@@ -16,11 +16,21 @@ deviation is listed under **Deviations** with the reason.
 | `button` | Flex container; clickable; focusable (M5/M6). |
 | `a` | Flex container; clickable; focusable. No navigation, `href` is ignored. |
 | `input` (text only) | Single-line text field (M8). Other `type`s warn and are treated as `text`. |
-| `img` | Replaced leaf element; `src` is resolved through an `io/fs.FS` (M3+). |
+| `img` | Replaced leaf element; `src` will be resolved through an `io/fs.FS`. **Not loaded yet**: an empty box plus a warning. |
+| `body` | The **root element** (see below). |
+| `head`, `title`, `meta`, `link`, `style`, `template`, `noscript` | Not rendered. `<style>` contents are style sheets. |
+| `script` | Ignored, with a warning (no JavaScript). |
 | anything else | Behaves as `div` and emits a warning. |
 
-Text runs are anonymous leaf nodes. Each run is a flex item of its parent
-(see M4).
+Documents are parsed with a full HTML5 parser (`golang.org/x/net/html`),
+so fragments, missing `<html>`/`<body>` and unclosed tags behave as in
+browsers. The `<body>` element is the root of the rendered tree: it fills
+the viewport (§2.6) and can be styled with `body { ... }`. `<html>` is not
+part of the tree.
+
+Text runs are anonymous leaf nodes. Each run will be a flex item of its
+parent (M4). Until M4, non-whitespace text is not rendered and produces
+one warning.
 
 ## 2. Layout model
 
@@ -61,16 +71,38 @@ Numbers are plain decimals (`12`, `-3.5`, `.25`). Exponents, `calc()`, `em`,
 | `max-width`, `max-height` | `<len>` ≥ 0 \| `none` | `none` | |
 | `margin`, `margin-{top,right,bottom,left}` | `<len>` \| `auto` (negative allowed) | `0` | 1-4 value shorthand |
 | `padding`, `padding-{top,right,bottom,left}` | `<len>` ≥ 0 | `0` | 1-4 value shorthand |
-| `border-width`, `border-{top,right,bottom,left}-width` | `<len>` in px/rem ≥ 0 \| `thin`(1px) \| `medium`(3px) \| `thick`(5px) | `0` | see deviation D3 |
+| `border-width`, `border-{top,right,bottom,left}-width` | `<len>` in px/rem ≥ 0 \| `thin`(1px) \| `medium`(3px) \| `thick`(5px) | `0` | see D3. Computed value is snapped as in browsers: a width ≥ 1px is floored to whole px, a width in (0, 1px) becomes 1px. Layout and paint therefore use the same widths. |
 | `box-sizing` | `content-box` \| `border-box` | `content-box` | |
 | `top`, `right`, `bottom`, `left` | `<len>` \| `auto` (negative allowed) | `auto` | |
 | `overflow` | `visible` \| `hidden` \| `scroll` | `visible` | one value for both axes; `overflow-x/-y` unsupported |
-| `z-index` | `<integer>` \| `auto` | `auto` | paint order only (M6) |
+| `z-index` | `<integer>` \| `auto` | `auto` | paint order only; non-`auto` creates a stacking context (§6.4). Hit testing follows it in M6 |
 
-Paint properties (`background-color`, `border-color`, `border-radius`,
-`opacity`, `box-shadow`, `color`, `font-*`, `line-height`, `text-align`,
-`text-overflow`, `white-space`) are specified when they are implemented
-(M2-M4) and are currently warned as unsupported.
+Paint and text properties (`<color>` = `#rgb`, `#rgba`, `#rrggbb`,
+`#rrggbbaa`, `rgb()`/`rgba()` in comma or space syntax with numbers or
+percentages, the 148 CSS named colors, `transparent`, `currentcolor`;
+`hsl()` and other color functions are unsupported):
+
+| Property | Values | Initial | Inherited | Notes |
+|---|---|---|---|---|
+| `background-color`, `background` | `<color>` | `transparent` | no | `background` accepts a single color only |
+| `border-color` | one `<color>` | `currentcolor` | no | one color for all sides (D15) |
+| `border-style` | `solid` \| `none` \| `hidden` | (solid) | no | `none`/`hidden` set the widths to 0; other styles warn |
+| `border` | `[<width>] [solid\|none] [<color>]` | | no | without a style keyword nothing is drawn, as in CSS |
+| `border-radius` | 1-4 `<len>` (TL TR BR BL order) | `0` | no | `%` of the box width (horizontal) and height (vertical); no `/` syntax |
+| `border-{top-left,...}-radius` | `<len> [<len>]` | `0` | no | horizontal, vertical |
+| `opacity` | `<number>` \| `<percent>` | `1` | no | clamped to 0..1; creates a stacking context when < 1 |
+| `box-shadow` | `none` \| `<x> <y> [<blur> [<spread>]] [<color>]` | `none` | no | one outer shadow (D16); color first or last; default `currentcolor` |
+| `color` | `<color>` | `black` | yes | |
+| `font-family` | any (stored verbatim) | | yes | used from M4 |
+| `font-size` | `<len>` in px/rem | `16px` | yes | used from M4 |
+| `font-weight` | `normal` \| `bold` \| 1..1000 | `400` | yes | used from M4 |
+| `line-height` | `normal` \| `<number>` \| `<len>` | `normal` | yes | used from M4 |
+| `text-align` | `left` \| `right` \| `center` | `left` | yes | used from M4 |
+| `white-space` | `normal` \| `nowrap` \| `pre` \| `pre-wrap` | `normal` | yes | used from M4 |
+| `text-overflow` | `clip` \| `ellipsis` | `clip` | no | used from M4 |
+
+`1rem` is always 16px. The root's font size does not change it, because
+`<html>` is not styleable.
 
 CSS-wide keywords (`inherit`, `initial`, `unset`, `revert`) and
 `!important` are unsupported (warn; `!important` is stripped and the
@@ -224,7 +256,18 @@ content-sized).
 
 Supported: type (`div`), class (`.a`), id (`#a`), universal (`*`),
 compound (`div.a#b`), descendant (`a b`), child (`a > b`), selector lists
-(`a, b`), pseudo-classes `:hover`, `:focus`, `:active`.
+(`a, b`), pseudo-classes `:hover`, `:focus`, `:active`. Type selectors are
+case-insensitive; ids and classes are case-sensitive.
+
+Unsupported selectors (`+`, `~`, attribute selectors, pseudo-elements,
+other pseudo-classes such as `:nth-child`) produce a warning, and that
+selector is dropped from its list. At-rules (`@media`, `@font-face`, ...)
+are skipped with a warning. Invalid declarations in a rule are warned once
+per rule, not once per matching element.
+
+Sources, in order: the `css` argument of `RenderHTML` / `App.SetView`,
+then the document's `<style>` elements in document order, then each
+element's `style=""` attribute.
 
 Cascade order, lowest to highest (no specificity calculation):
 
@@ -235,8 +278,10 @@ Cascade order, lowest to highest (no specificity calculation):
    base rule written before or after it).
 4. Inline `style=""`.
 
-Inheritance: only text properties (`color`, `font-*`, `line-height`,
-`text-align`, `white-space`) inherit, as in CSS. Details are added in M3/M4.
+Inheritance: only `color`, `font-family`, `font-size`, `font-weight`,
+`line-height`, `text-align` and `white-space` inherit, as in CSS.
+`currentcolor` (the initial `border-color` and the default shadow color)
+resolves to the element's computed `color`.
 
 ## 4. Deviations from CSS (deliberate)
 
@@ -266,16 +311,16 @@ Inheritance: only text properties (`color`, `font-*`, `line-height`,
 * **D9** (width-only measurement ignoring heights) is removed; see the
   table above.
 
-## 6. Painting and rasterization (M2)
+## 6. Painting and rasterization (M2, M3)
 
 The renderer draws through `paint.Canvas` (fill rounded rect, border,
 box shadow, clip, opacity group). Commands are recorded into a display list
 (`paint.List`) in logical units. The software rasterizer (`paint.Raster`)
 turns them into an `*image.RGBA` using **integer arithmetic only**. The
-CSS paint properties that will feed these commands (M3) are
-`background-color`, `border-color` (one color for all sides, see D15),
-`border-radius`, `opacity`, `box-shadow` (one outer shadow, see D16),
-and the text properties in M4.
+CSS paint properties (§2.1) map to these commands: `box-shadow`, then
+`background-color`, then the border, each on the border box with
+`border-radius`. `overflow: hidden | scroll` clips descendants to the
+padding box with the inner radii. `opacity < 1` becomes an opacity group.
 
 ### 6.1 Pixel-snapping rule
 
@@ -303,9 +348,7 @@ and the text properties in M4.
   anti-aliasing. Corner pixels use 8x8 supersampling (65 coverage levels)
   with exact 128-bit ellipse tests. Pixels entirely inside or outside the
   curve are classified exactly without sampling.
-* Colors are non-premultiplied sRGB in, premultiplied RGBA8 out,
-  source-over, with exact rounding of `/255`. Blending is in sRGB space, as
-  browsers do.
+* Blending: see §6.3.
 * Clips: rectangle clips intersect bounds. Rounded clips multiply coverage
   (anti-aliased clip edges).
 * Opacity groups render into an offscreen layer covering the current clip
@@ -316,11 +359,102 @@ and the text properties in M4.
   per axis whose combined variance approximates a Gaussian with
   sigma = blur/2 (CSS). The shadow is not painted inside the box itself.
 
+### 6.3 Blending model
+
+Everything below is integer arithmetic and is exactly what
+`internal/paint` does, so these formulas define the output bit for bit.
+
+**Color space.** All colors are sRGB, gamma-encoded, 8 bits per
+channel. Blending works directly on the encoded values (no conversion to
+linear light, no gamma correction), the same as browsers' default
+compositing. There is no color management: output pixels are sRGB values
+and PNGs are written untagged.
+
+**Input colors.** CSS colors become non-premultiplied `R, G, B, A` in
+0..255. Fractional components round to nearest (`rgb(10.5 ...)` → 11,
+alpha `0.5` → 128, `50%` → 128), computed with fixed-point decimal
+parsing, never floats.
+
+**Target format.** `image.RGBA`: 8-bit **premultiplied** RGBA. The
+frame starts as opaque white (the canvas color, §7).
+
+**Rounding helper.** `div255(x) = (x + 128 + ((x + 128) >> 8)) >> 8`,
+which equals `round(x / 255)` (halves up) for all `0 <= x <= 255*255`
+(tested exhaustively; it is not exact far beyond that, and no call site
+exceeds it). Every division by 255 goes through it.
+
+**Coverage.** A pixel's geometric coverage `k` is in 0..64: 64 inside, 0
+outside, the count of 8x8 samples at rounded corners. Rounded clips
+multiply it: `k = (k * clipK) >> 6` for each active rounded clip
+(truncating). The effective source alpha is `a = (A*k + 32) >> 6`, i.e.
+`round(A*k/64)`.
+
+**Source-over** (each fill, border and shadow pixel), with `inv = 255 - a`:
+
+```
+dst.C = div255(src.C * a + dst.C * inv)     for C in R, G, B
+dst.A = a + div255(dst.A * inv)
+```
+
+The premultiplication of the source and the attenuation of the
+destination share one rounding step. With `a = 255` this writes the
+source color exactly.
+
+**Shadows.** The blurred mask value `v` is in 0..65280 (64 coverage
+steps × 1020). The effective alpha is
+`a = (A * v * k + 65280*32) / (65280*64)` (rounded), where `k = 64 - box
+coverage` (the shadow is not drawn under its box). The box blur divides
+with exact reciprocal multiplication, rounding halves up.
+
+**Opacity groups.** A group is drawn into a transparent premultiplied
+layer, then composited with group alpha `g` (0..255; CSS
+`opacity` → `round(opacity*255)`):
+
+```
+sa    = div255(layer.A * g)
+dst.C = div255(layer.C * g) + div255(dst.C * (255 - sa))
+dst.A = sa + div255(dst.A * (255 - sa))
+```
+
+The two terms are rounded separately, so a group can differ by 1 from
+painting the same shape directly at the combined alpha. Overlaps inside a
+group composite before the group alpha, as in CSS.
+
 | # | Deviation | Reason |
 |---|---|---|
 | D15 | One `border-color` for all four sides. | Not needed for app UIs yet; easy to extend. |
 | D16 | Only one, outer `box-shadow` (no `inset`, no lists). | Subset. |
 | D17 | Shadow blur is a 3-pass box blur (a close approximation of the Gaussian); pixels may differ slightly from browsers. | Integer-only, fast, deterministic. |
+| D18 | Curved edges (rounded corners, rounded clips) are anti-aliased with 8x8 supersampling. Browsers (Skia) use analytic coverage, so individual edge pixels can differ by up to ~85 of 255 levels. Straight edges are identical. | Exact integer coverage, deterministic. |
+| D19 | Group opacity composites the layer with separately rounded terms (§6.3); pixels can differ from browsers by 1-2 levels. | Integer-only. |
+| D20 | The canvas is always white: `body`'s background is not propagated to the canvas. Because `body` fills the viewport, this is visible only through `body` margins. | Simplicity; app windows. |
+
+### 6.4 Paint order and stacking contexts
+
+Every element is positioned (D2), which simplifies CSS 2 Appendix E:
+
+* A **stacking context** is formed by the canvas (the root context) and by
+  every element with `z-index` other than `auto` or with `opacity < 1`.
+  `<body>` is an ordinary element inside the canvas context, as in
+  browsers, where the root context belongs to `<html>`.
+* Inside a stacking context, in order:
+  1. The context element's own shadow, background and border.
+  2. Descendant contexts with **negative** `z-index`, lowest first (stable
+     tree order for ties).
+  3. All other descendants in **tree order**: each element's shadow,
+     background and border, followed by its descendants. Descendant
+     contexts with `z-index: 0`, or `auto` with `opacity < 1`, are painted
+     here at their tree position, atomically.
+  4. Descendant contexts with **positive** `z-index`, lowest first.
+* A context's descendants never interleave with things outside it. For
+  example, a `z-index: 999` child of a `z-index: 1` box stays below a
+  `z-index: 2` sibling of that box.
+* `overflow` clips apply to all descendants, including stacking contexts
+  painted out of tree order. Each such context is painted with the clips of
+  its ancestors between it and its parent context.
+* A negative `z-index` box whose parent context is the canvas paints
+  behind `body`'s background, and is hidden if `body` has one, as in
+  browsers.
 
 ## 5. Verification
 
@@ -341,6 +475,17 @@ Layout behavior is checked against Chromium:
   `go test ./internal/paint -run TestGolden -update` to regenerate; look at
   the images before committing). Unit tests cover the snapping invariants
   and check that steady-state frames allocate nothing.
+* RenderHTML output is checked against **Chromium screenshots**
+  (`internal/render/chrome_test.go`). The documents in
+  `testdata/render/docs` (non-text, 13 documents, 3 also at 2x) are
+  screenshotted by `scripts/screenshot.cjs` (`make crosscheck`) with a
+  base sheet encoding D1-D4 and D20. For each one the test reports the max
+  error, the mean absolute channel error, and the share of pixels off by
+  more than 8 and 32 levels. The default bound is near-exact: mean ≤ 0.05
+  and no pixel off by more than 32. Documents above that are listed with
+  their deviation (D17 shadows, D18 curve AA, D19 opacity rounding) and
+  bounds about 1.5x their measured error. Current numbers are in
+  `spec/STATUS.md`.
 * `go test ./internal/layout -run TestReduce -v -args -reduce=CASE`
   minimizes a failing case against a live Chromium
   (`scripts/chrome-serve.cjs`). It deletes subtrees and declarations while
