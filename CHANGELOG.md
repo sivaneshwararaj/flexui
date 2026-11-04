@@ -6,6 +6,9 @@ versioning with `v0.x` tags until the API settles.
 ## Unreleased
 
 ### Added
+- Damage-region repainting and copying, incremental paint-only restyle
+  (`FLEXUI_CHECK_DAMAGE=1` verifies them against full repaints); demo
+  frame benchmarks at 2560x1600.
 - M9: `examples/demo`, a contacts manager (list, form, modal) using only
   the public API, with a scripted headless session and goldens;
   `Ctx.Focus` (focus after the re-render).

@@ -481,6 +481,34 @@ group composite before the group alpha, as in CSS.
 | D19 | Group opacity composites the layer with separately rounded terms (§6.3); pixels can differ from browsers by 1-2 levels. | Integer-only. |
 | D20 | The canvas is always white: `body`'s background is not propagated to the canvas. Because `body` fills the viewport, this is visible only through `body` margins. | Simplicity; app windows. |
 
+### 6.6 Incremental repainting
+
+Frames are byte-identical to a full repaint; only the work differs:
+
+* **Damage regions**: each frame's display list is compared with the
+  previous one. With the same structure, every operation that differs
+  contributes its old and new device bounds (clipped); a changed clip
+  contributes both clip rectangles; a changed group opacity the extent of
+  the group. If operations were added or removed, the common prefix and
+  suffix are identical and only the two middles are damaged, provided
+  they leave the clip and group state the same; otherwise the whole frame
+  is repainted. Rectangles are merged (at most 8). The new list is then
+  replayed with each damaged rectangle as the base clip. This is exact
+  because every raster operation is pixel-local under a clip (§6.1-6.5;
+  shadow masks are computed over their whole extent). If more than 60%
+  of the frame is damaged, it is repainted whole.
+* Only the damaged rectangles are copied to the platform's buffer when
+  it passes the same image again (platforms must not modify it between
+  frames).
+* **Incremental restyle**: a pseudo-class change restyles only the
+  elements whose state changed (and their subtrees). If only paint
+  properties change (colors, backgrounds, borders' color, radii,
+  opacity, shadow, z-index), the boxes keep their layout; otherwise the
+  document is rebuilt and laid out.
+* `FLEXUI_CHECK_DAMAGE=1` makes every incremental frame and restyle also
+  run in full and panic on any difference; all app and demo tests run
+  with it (including 900 random interaction events).
+
 ### 6.4 Paint order and stacking contexts
 
 Every element is positioned (D2), which simplifies CSS 2 Appendix E:
@@ -681,8 +709,9 @@ clip. A 1:1 mapping copies source pixels exactly.
   an id.
 * **Caching**: each frame recomputes only the stages whose inputs
   changed: parse (only when the view's HTML string changed), style
-  (HTML, CSS or pseudo-class state changed), layout (style or viewport
-  changed), placement (scrolling), paint. Parsed style sheets and shaped
+  (HTML, CSS or pseudo-class state changed; paint-only pseudo-class
+  changes restyle in place, §6.6), layout (style or viewport changed),
+  placement (scrolling), paint (only damaged rectangles, §6.6). Parsed style sheets and shaped
   text runs are cached by source and parameters across rebuilds, so a
   re-render after a handler re-shapes only text that changed. An
   unchanged frame copies the retained image. A frame produced

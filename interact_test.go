@@ -73,9 +73,15 @@ func TestHoverActiveFocusStyles(t *testing.T) {
 	base := clone(s.Frame())
 	checkGolden(t, "list_base", s.Frame())
 
-	// :hover on the Add button and on a row.
+	// :hover on the Add button and on a row. The hover change repaints
+	// only damaged rectangles (and, with the damage check on in these
+	// tests, is verified against a full repaint).
+	before := l.app.view.Stats()
 	s.Move(center(t, l.app, "add"))
 	checkGolden(t, "list_hover_add", s.Frame())
+	if st := l.app.view.Stats(); st.Damaged != before.Damaged+1 || st.DamagePixel-before.DamagePixel > 300*220/4 {
+		t.Errorf("hover repaint: %d damaged frames (+%d px)", st.Damaged-before.Damaged, st.DamagePixel-before.DamagePixel)
+	}
 	s.Leave()
 	if d := pixelDiff(s.Frame(), base); d != "" {
 		t.Errorf("after leaving, frame differs from the base: %s", d)

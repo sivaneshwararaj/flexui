@@ -49,16 +49,26 @@ var seed = []string{
 	"Radia Perlman|radia@dec.com|Spanning tree protocol.",
 }
 
-// NewDemo builds the app: state, view and handlers.
-func NewDemo() *Demo {
+// NewDemo builds the app: state, view and handlers, at 760x480.
+func NewDemo() *Demo { return newDemo(flexui.Options{Width: 760, Height: 480}, 0) }
+
+// newDemo builds the app with the given size and scale, and extra
+// generated contacts (for benchmarks).
+func newDemo(o flexui.Options, extra int) *Demo {
 	d := &Demo{nextID: 1}
 	for _, s := range seed {
 		f := strings.Split(s, "|")
 		d.contacts = append(d.contacts, Contact{ID: d.nextID, Name: f[0], Email: f[1], Notes: f[2]})
 		d.nextID++
 	}
+	for i := 0; i < extra; i++ {
+		d.contacts = append(d.contacts, Contact{ID: d.nextID, Name: fmt.Sprintf("Zed Person %03d", i),
+			Email: fmt.Sprintf("person%03d@example.com", i), Notes: "Generated."})
+		d.nextID++
+	}
 	d.selectContact(1)
-	d.App = flexui.New(flexui.Options{Title: "flexui demo: contacts", Width: 760, Height: 480})
+	o.Title = "flexui demo: contacts"
+	d.App = flexui.New(o)
 	tmpl := template.Must(template.New("demo").Parse(view))
 	d.App.SetViewFunc(func() string {
 		var b bytes.Buffer

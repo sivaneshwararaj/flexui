@@ -1,10 +1,47 @@
 package paint
 
-import "math/bits"
+import (
+	"image"
+	"math/bits"
+)
 
 // maskOne is the mask value for full coverage. Masks are kept at high
 // precision (64 coverage steps x 1020) so the blur passes do not band.
 const maskOne = 64 * 1020
+
+// shadowGeometry returns the snapped shadow shape, the box-blur radius
+// (device pixels) and the mask bounds (the shape grown by three blur
+// radii), which bound every pixel the shadow can touch.
+func (r *Raster) shadowGeometry(box RRect, s Shadow) (sh shape, rb int, mb image.Rectangle, ok bool) {
+	sr := box
+	sr.Rect.X += s.DX - s.Spread
+	sr.Rect.Y += s.DY - s.Spread
+	sr.Rect.W += 2 * s.Spread
+	sr.Rect.H += 2 * s.Spread
+	for i := range sr.Radii {
+		if sr.Radii[i].X > 0 && sr.Radii[i].Y > 0 {
+			sr.Radii[i].X = max(0, sr.Radii[i].X+s.Spread)
+			sr.Radii[i].Y = max(0, sr.Radii[i].Y+s.Spread)
+		}
+	}
+	sh = r.shapeOf(sr)
+	if sh.empty() {
+		return sh, 0, image.Rectangle{}, false
+	}
+	// Box-blur radius: three passes of width w = 2*rb+1 have variance
+	// 3*(w*w-1)/12 = sigma², so w = sqrt(4*sigma²+1). sigma is in device
+	// units (1/64 px).
+	sigma := r.dev(s.Blur) / 2
+	if sigma > 0 {
+		wq := int64(isqrt(uint64(4*sigma*sigma + 64*64))) // width in 1/64 px
+		w := int((wq + 32) / 64)
+		if w%2 == 0 {
+			w++
+		}
+		rb = w / 2
+	}
+	return sh, rb, sh.bounds().Inset(-3 * rb), true
+}
 
 // BoxShadow implements Canvas.
 //
@@ -17,38 +54,11 @@ func (r *Raster) BoxShadow(box RRect, s Shadow) {
 	if s.Color.A == 0 {
 		return
 	}
-	sr := box
-	sr.Rect.X += s.DX - s.Spread
-	sr.Rect.Y += s.DY - s.Spread
-	sr.Rect.W += 2 * s.Spread
-	sr.Rect.H += 2 * s.Spread
-	for i := range sr.Radii {
-		if sr.Radii[i].X > 0 && sr.Radii[i].Y > 0 {
-			sr.Radii[i].X = max(0, sr.Radii[i].X+s.Spread)
-			sr.Radii[i].Y = max(0, sr.Radii[i].Y+s.Spread)
-		}
-	}
-	sh := r.shapeOf(sr)
-	if sh.empty() {
+	sh, rb, mb, ok := r.shadowGeometry(box, s)
+	if !ok {
 		return
 	}
 	boxShape := r.shapeOf(box)
-
-	// Box-blur radius: three passes of width w = 2*rb+1 have variance
-	// 3*(w*w-1)/12 = sigma², so w = sqrt(4*sigma²+1). sigma is in device
-	// units (1/64 px).
-	sigma := r.dev(s.Blur) / 2
-	rb := 0
-	if sigma > 0 {
-		wq := int64(isqrt(uint64(4*sigma*sigma + 64*64))) // width in 1/64 px
-		w := int((wq + 32) / 64)
-		if w%2 == 0 {
-			w++
-		}
-		rb = w / 2
-	}
-	ext := 3 * rb
-	mb := sh.bounds().Inset(-ext)
 	area := mb.Intersect(r.clip().bounds)
 	if area.Empty() {
 		return

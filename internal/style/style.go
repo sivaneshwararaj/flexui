@@ -163,3 +163,18 @@ func Initial() Style {
 		FontWeight:         400,
 	}
 }
+
+// SameLayout reports whether two computed styles can only differ in how
+// the box is painted: they may differ in colors, background, border
+// color, radii, opacity, shadow and z-index, but in nothing that affects
+// layout or text shaping.
+func SameLayout(a, b *Style) bool {
+	x, y := *a, *b
+	for _, s := range []*Style{&x, &y} {
+		s.BackgroundColor, s.BorderColor, s.BorderColorCurrent = Color{}, Color{}, false
+		s.BorderRadius = [4][2]Length{}
+		s.Opacity, s.Shadow, s.Color = 0, BoxShadow{}, Color{}
+		s.ZIndex, s.ZAuto = 0, false
+	}
+	return x == y
+}

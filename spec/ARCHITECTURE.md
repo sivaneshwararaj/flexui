@@ -218,3 +218,15 @@ declaration strings. Each case is checked two ways:
   (`render.InputState`), so editing only repaints (no restyle or
   relayout). `render/input.go` draws text, placeholder, selection and
   caret, and offers geometry helpers (`InputCaretX`, `InputContent`).
+
+## Incremental frames
+
+* `paint/damage.go`: `Raster.Damage(prev, next)` diffs two display lists
+  into device rectangles (op-by-op, or prefix/suffix splicing when the
+  structure changed); `BeginClip` replays a list inside one rectangle.
+* `view.paint`: double-buffered lists (`lists[cur]`), damage repaint or
+  full repaint, dirty rectangles copied to the platform buffer when it is
+  the same image; `verify` / `verifyRestyle` under `FLEXUI_CHECK_DAMAGE`.
+* `render/restyle.go`: `Document.Restyle(nodes)` recomputes styles of the
+  elements whose pseudo-class state changed, in place, when
+  `style.SameLayout` holds for all of them.

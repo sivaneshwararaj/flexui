@@ -104,6 +104,22 @@ Last updated after the first macOS run (stages 1-5, 7 pass). Next steps: stage 6
   A scripted headless session produces 8 states compared byte for byte
   with goldens in `examples/demo/testdata` (also on linux/386);
   `go run ./demo -window` opens it on macOS (untested).
+* Performance (demo, 214 contacts, 2560x1600 device pixels = 1280x800
+  @2x, one event + one frame, 4-core cloud VM; `cd examples && go test
+  ./demo -run xxx -bench Frame`):
+
+  | case | before | after |
+  |---|---|---|
+  | idle | 1.6 ms | 0.08 ms |
+  | hover change | 51 ms | 2.2 ms |
+  | typing (re-render) | 56 ms | 14 ms |
+  | scrolling 30px | 51 ms | 7.4 ms |
+
+  From: border painting limited to the border ring, damage-region
+  repainting and copying, incremental paint-only restyle, faster opaque
+  fills (all byte-identical to full repaints; checked by
+  `FLEXUI_CHECK_DAMAGE` in every app/demo test). Typing still re-parses,
+  re-lays out and repaints the changed region (the HTML changes).
 * Interaction (M6): hit testing in exact paint order (z-index, stacking
   contexts, overflow clips; checked pixel-by-pixel against the painted
   output on random documents), `:hover`/`:active`/`:focus` restyling only
@@ -217,6 +233,7 @@ Last updated after the first macOS run (stages 1-5, 7 pass). Next steps: stage 6
 * Rasterizer speed: the shadow blur dominates (about half of a card
   frame).
 * Glyph masks are cached per face (cleared at 32k entries).
-* A pseudo-class change restyles and re-lays-out the whole document (only
-  when some rule uses that pseudo-class); fine for app-sized documents,
-  but there is no per-subtree invalidation.
+* A change of the view's HTML (e.g. typing into a controlled input)
+  re-parses, restyles and lays out the whole document (no tree diffing);
+  about 14 ms for the demo at 2560x1600. Pseudo-class changes that affect
+  layout (e.g. bold on hover) also rebuild everything.
