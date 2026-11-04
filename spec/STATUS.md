@@ -1,14 +1,14 @@
 # Status
 
-Last updated after the specificity cascade (pre-M4). Next step: M4 (text).
+Last updated after M4. Next step: M5 (handlers and state).
 
 | Milestone | State |
 |---|---|
 | M0 Spec and scaffolding | done |
 | M1 Layout engine | done |
 | M2 Rasterizer | done |
-| M3 HTML+CSS to pixels | done (no text: M4; no images yet) |
-| M4 Text | not started |
+| M3 HTML+CSS to pixels | done (no images yet) |
+| M4 Text | done |
 | M5 Handlers and state | not started (`App.Handle` stores handlers only) |
 | M6 Interaction | not started |
 | M7 Portability gate + macOS | portability script exists and passes; darwin not started |
@@ -51,12 +51,24 @@ Last updated after the specificity cascade (pre-M4). Next step: M4 (text).
   groups, HiDPI). Snapping and blending are specified bit-exactly in spec
   §6.1-6.3. Steady-state frames allocate nothing; a 320x200 card at 2x
   renders in about 2 ms.
+* `text` (M4): bundled Inter 4.1 Regular/Bold (OFL), HarfBuzz shaping in
+  font units, UAX #14 breaking (tailored to Chromium), greedy wrapping,
+  `white-space` (normal, nowrap, pre, pre-wrap with conditional hanging),
+  `text-align`, `line-height`, `text-overflow: ellipsis`, and an
+  integer-only glyph rasterizer (quarter-pixel positioning, cached
+  masks). Layout leaves use `layout.Measurer` (`Widths()`, `Height(w)`).
+  Text layout matches Chromium exactly (1/64 px) on 12 hand-written and
+  300 random documents: 2799 boxes and 2587 lines compared; 33 random
+  documents differ by at most 2/64 px (flex rounding, D14) and 2 by under
+  0.5 px (kerning at a line end, D23).
+  * Works around a go-text v0.3.5 bug that skipped most class kerning
+    (`internal/text/coverage.go`, guarded by `TestKerning`).
 * `render`: dom → cascade → layout → display list in CSS paint order
   (stacking contexts from `z-index` and `opacity`, negative/zero/positive
   layers, `overflow` clips carried to out-of-order contexts) → raster,
   on a white canvas.
 * Tests:
-  * 17 RenderHTML goldens (14 documents, 3 also at 2x) in
+  * 22 RenderHTML goldens (17 documents, 4 also at 2x) in
     `testdata/render/golden`. They include three z-index documents with
     overlapping absolute boxes (negative, nested and clipped contexts).
   * 8 rasterizer goldens.
@@ -81,14 +93,20 @@ Last updated after the specificity cascade (pre-M4). Next step: M4 (text).
   | radius@2x | 74 | 0.059 | 0.353% | 0.041% | accepted (D18) |
   | shadows | 85 | 0.473 | 1.184% | 0.055% | accepted (D17, D18) |
   | specificity | 34 | 0.053 | 0.456% | 0.003% | accepted (D18) |
+  | text_card | 41 | 0.313 | 1.343% | 0.017% | accepted (D21, D18) |
+  | text_card@2x | 203 | 0.599 | 1.530% | 0.696% | accepted (D22, D21) |
+  | text_ellipsis | 48 | 0.394 | 1.682% | 0.105% | accepted (D21, D18) |
+  | text_paragraphs | 47 | 0.505 | 2.179% | 0.081% | accepted (D21) |
   | zindex_clip | 26 | 0.014 | 0.065% | 0% | ok |
   | zindex_clip@2x | 50 | 0.013 | 0.066% | 0.004% | accepted (D18) |
   | zindex_nested | 1 | 0.022 | 0% | 0% | ok |
   | zindex_overlap | 0 | 0.000 | 0% | 0% | exact |
 
-  The remaining differences are all anti-aliasing on curves (D18), the
-  box-blur shadow approximation (D17), or ±2 opacity rounding (D19).
+  The remaining differences are anti-aliasing on curves (D18) and glyphs
+  (D21), the box-blur shadow approximation (D17), ±2 opacity rounding
+  (D19), and at 2x Chromium's device-pixel line metrics (D22).
   Side-by-side diff images confirmed that nothing structural differs.
+* Binary size: `examples/hello` with both fonts is 7.2 MB (linux/amd64).
 * Determinism: layout and rasterization are integer-only; tests pass with
   `GOARCH=386`.
 * `scripts/check-portability.sh`: builds and vets the library and the
@@ -97,8 +115,9 @@ Last updated after the specificity cascade (pre-M4). Next step: M4 (text).
 
 ## Stubbed
 
-* Text: parsed into the DOM but not rendered (one warning) until M4.
-  `internal/text` holds only package docs.
+* Text: Latin left-to-right only (no bidi or complex scripts), one
+  bundled family, no italics, no `letter-spacing`/`word-spacing`, no
+  hyphenation, no inline formatting across elements (§7.1).
 * `<img>`: an empty box with a warning; no image loading yet.
 * `<input>`, `<button>`, `<a>`: plain boxes (interaction in M5/M6/M8).
 * Handlers are stored but never invoked (M5). Pseudo-class state is
@@ -113,8 +132,14 @@ Last updated after the specificity cascade (pre-M4). Next step: M4 (text).
 * Paint deviations D15-D20 (`spec/SUBSET.md` §6): one `border-color`, one
   outer `box-shadow`, box-blur shadows, supersampled curve AA, opacity
   rounding, and no body-to-canvas background propagation.
+* Text deviations D21-D24 (`spec/SUBSET.md` §7.5): glyph AA differs from
+  Skia's, layout is scale-independent (Chromium's 2x line heights differ),
+  kerning at some soft line ends, and ellipsis on text directly inside an
+  ellipsizing element.
 * `App.Frame` rebuilds the DOM, styles and layout every frame, and
   `layout` allocates per container. Fine for now; caching comes with the
   re-render loop (M5).
 * Rasterizer speed: the shadow blur dominates (about half of a card
   frame).
+* Text runs are shaped on every `Build` (every frame until M5 caching);
+  glyph masks are cached per face (cleared at 32k entries).

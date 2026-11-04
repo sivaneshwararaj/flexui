@@ -23,7 +23,7 @@ func TestAppBasics(t *testing.T) {
 	if p := img.RGBAAt(2, 2); p.R != 255 || p.G != 0 || img.RGBAAt(7, 7).G != 255 {
 		t.Fatalf("RenderHTML pixels %v %v", p, img.RGBAAt(7, 7))
 	}
-	if w := flexui.CheckHTML(`<blink>x</blink>`, `p { float: left }`); len(w) != 3 {
+	if w := flexui.CheckHTML(`<blink>x</blink>`, `p { float: left }`); len(w) != 2 {
 		t.Fatalf("warnings %q", w)
 	}
 }

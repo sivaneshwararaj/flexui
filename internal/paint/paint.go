@@ -73,6 +73,9 @@ type Canvas interface {
 	// (0-255) at the matching PopOpacity.
 	PushOpacity(alpha uint8)
 	PopOpacity()
+	// Glyphs draws a run of glyphs. The run must not be modified while
+	// a recording holds it.
+	Glyphs(run *GlyphRun)
 }
 
 // OpKind identifies a recorded command.
@@ -86,6 +89,7 @@ const (
 	OpPopClip
 	OpPushOpacity
 	OpPopOpacity
+	OpGlyphs
 )
 
 // Op is one recorded command. Only the fields relevant to Kind are set.
@@ -96,6 +100,7 @@ type Op struct {
 	Shadow Shadow
 	Color  Color
 	Alpha  uint8
+	Run    *GlyphRun
 }
 
 // List is a display list: it records Canvas commands so they can be
@@ -126,6 +131,8 @@ func (l *List) Replay(c Canvas) {
 			c.PushOpacity(op.Alpha)
 		case OpPopOpacity:
 			c.PopOpacity()
+		case OpGlyphs:
+			c.Glyphs(op.Run)
 		}
 	}
 }
@@ -148,3 +155,5 @@ var (
 	_ Canvas = (*List)(nil)
 	_ Canvas = (*Raster)(nil)
 )
+
+func (l *List) Glyphs(run *GlyphRun) { l.Ops = append(l.Ops, Op{Kind: OpGlyphs, Run: run}) }

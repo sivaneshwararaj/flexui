@@ -70,10 +70,9 @@ func build(t testing.TB, s *spec) *Node {
 	n := &Node{Style: &st}
 	switch s.leaf {
 	case leafFixed:
-		sz := geom.Size{W: geom.Px(s.w), H: geom.Px(s.h)}
-		n.Measure = func(_, _ Opt, _, _ Avail) geom.Size { return sz }
+		n.Measure = fixedMeasure{geom.Px(s.w), geom.Px(s.h)}
 	case leafText:
-		n.Measure = textMeasure(s.words, geom.Px(s.w), geom.Px(s.h))
+		n.Measure = textMeasure{s.words, geom.Px(s.w), geom.Px(s.h)}
 	}
 	for _, k := range s.kids {
 		n.Children = append(n.Children, build(t, k))
@@ -81,21 +80,26 @@ func build(t testing.TB, s *spec) *Node {
 	return n
 }
 
-func textMeasure(words int, ww, wh geom.Unit) MeasureFunc {
-	return func(kw, _ Opt, aw, _ Avail) geom.Size {
-		per := words
-		switch {
-		case kw.OK:
-			per = int(kw.V / ww)
-		case aw.Kind == Definite:
-			per = int(aw.V / ww)
-		case aw.Kind == MinContent:
-			per = 1
-		}
-		per = max(1, min(per, words))
-		lines := (words + per - 1) / per
-		return geom.Size{W: ww * geom.Unit(per), H: wh * geom.Unit(lines)}
-	}
+// fixedMeasure is a leaf with a fixed content size (an image stub).
+type fixedMeasure struct{ w, h geom.Unit }
+
+func (m fixedMeasure) Widths() (geom.Unit, geom.Unit) { return m.w, m.w }
+func (m fixedMeasure) Height(geom.Unit) geom.Unit     { return m.h }
+
+// textMeasure is a stub text leaf: `words` words of ww x wh each, wrapped
+// to as many per line as fit.
+type textMeasure struct {
+	words  int
+	ww, wh geom.Unit
+}
+
+func (m textMeasure) Widths() (geom.Unit, geom.Unit) {
+	return m.ww, m.ww * geom.Unit(m.words)
+}
+
+func (m textMeasure) Height(w geom.Unit) geom.Unit {
+	per := max(1, min(int(w/m.ww), m.words))
+	return m.wh * geom.Unit((m.words+per-1)/per)
 }
 
 // collect returns absolute rects of all nodes with ids.

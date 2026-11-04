@@ -30,17 +30,21 @@ const (
 // explain its difference, and the bounds it must stay within. Measured
 // values at the time of writing are in the comments (mean / share > 32).
 var acceptedChromeDiffs = map[string]accepted{
-	"app_shell":      {"D17 shadow blur, D18 curve AA", 0.12, 0.0005}, // 0.078 / 0.000%
-	"app_shell@2x":   {"D17 shadow blur, D18 curve AA", 0.16, 0.0003}, // 0.103 / 0.016%
-	"fractional":     {"D18 curve AA", 0.10, 0.0009},                  // 0.066 / 0.056%
-	"grid_wrap":      {"D17 shadow blur, D18 curve AA", 0.28, 0.0010}, // 0.183 / 0.067%
-	"opacity":        {"D19 group-opacity rounding", 0.23, 0},         // 0.149 / 0.000%, max 2
-	"overflow":       {"D18 curve AA (rounded clips)", 0.18, 0.0023},  // 0.120 / 0.148%
-	"radius":         {"D18 curve AA", 0.26, 0.0020},                  // 0.170 / 0.128%
-	"radius@2x":      {"D18 curve AA", 0.09, 0.0007},                  // 0.059 / 0.041%
-	"shadows":        {"D17 shadow blur, D18 curve AA", 0.71, 0.0009}, // 0.473 / 0.055%
-	"specificity":    {"D18 curve AA", 0.08, 0.0001},                  // 0.053 / 0.003%
-	"zindex_clip@2x": {"D18 curve AA (rounded clip)", 0.05, 0.0001},   // 0.013 / 0.004%
+	"app_shell":       {"D17 shadow blur, D18 curve AA", 0.12, 0.0005},      // 0.078 / 0.000%
+	"app_shell@2x":    {"D17 shadow blur, D18 curve AA", 0.16, 0.0003},      // 0.103 / 0.016%
+	"fractional":      {"D18 curve AA", 0.10, 0.0009},                       // 0.066 / 0.056%
+	"grid_wrap":       {"D17 shadow blur, D18 curve AA", 0.28, 0.0010},      // 0.183 / 0.067%
+	"opacity":         {"D19 group-opacity rounding", 0.23, 0},              // 0.149 / 0.000%, max 2
+	"overflow":        {"D18 curve AA (rounded clips)", 0.18, 0.0023},       // 0.120 / 0.148%
+	"radius":          {"D18 curve AA", 0.26, 0.0020},                       // 0.170 / 0.128%
+	"radius@2x":       {"D18 curve AA", 0.09, 0.0007},                       // 0.059 / 0.041%
+	"shadows":         {"D17 shadow blur, D18 curve AA", 0.71, 0.0009},      // 0.473 / 0.055%
+	"specificity":     {"D18 curve AA", 0.08, 0.0001},                       // 0.053 / 0.003%
+	"text_card":       {"D21 glyph AA, D18 curve AA", 0.47, 0.0003},         // 0.313 / 0.017%
+	"text_card@2x":    {"D22 device-pixel font metrics, D21", 0.90, 0.0105}, // 0.599 / 0.696%
+	"text_ellipsis":   {"D21 glyph AA, D18 curve AA", 0.59, 0.0016},         // 0.394 / 0.105%
+	"text_paragraphs": {"D21 glyph AA", 0.76, 0.0012},                       // 0.505 / 0.081%
+	"zindex_clip@2x":  {"D18 curve AA (rounded clip)", 0.05, 0.0001},        // 0.013 / 0.004%
 }
 
 type accepted struct {

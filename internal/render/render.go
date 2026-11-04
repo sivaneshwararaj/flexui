@@ -14,16 +14,47 @@ import (
 	"github.com/sivaneshwararaj/flexui/internal/layout"
 	"github.com/sivaneshwararaj/flexui/internal/paint"
 	"github.com/sivaneshwararaj/flexui/internal/style"
+	"github.com/sivaneshwararaj/flexui/internal/text"
 )
 
 // Box is a rendered element: its computed style, layout node and
 // absolute border box.
 type Box struct {
-	El    *dom.Node
+	El    *dom.Node // nil for an anonymous text box
 	Style style.Style
 	Lay   *layout.Node
 	Kids  []*Box
-	Abs   geom.Rect // border box in document coordinates, after layout
+	Abs   geom.Rect  // border box in document coordinates, after layout
+	Text  *text.Text // set for anonymous text boxes
+}
+
+// textMeasure adapts a text run to layout.Measurer.
+type textMeasure struct{ t *text.Text }
+
+func (m textMeasure) Widths() (geom.Unit, geom.Unit) { return m.t.MinContent(), m.t.MaxContent() }
+func (m textMeasure) Height(w geom.Unit) geom.Unit   { return m.t.Height(w) }
+
+// newText makes the anonymous box for a run of text in parent (spec
+// SUBSET.md §7.1). It inherits the inherited properties; all others are
+// initial, except that it takes `overflow` and `text-overflow` from a
+// parent whose text-overflow is ellipsis and whose overflow clips.
+func newText(raw string, parent *style.Style) *Box {
+	st := style.Inherit(parent)
+	if parent.TextOverflow == style.TextOverflowEllipsis && parent.Overflow != style.OverflowVisible {
+		st.Overflow, st.TextOverflow = parent.Overflow, parent.TextOverflow
+	}
+	st.Finish()
+	t := text.New(raw, text.Params{
+		Weight: int(st.FontWeight), Size: st.FontSize, LineHeight: st.LineHeight,
+		WhiteSpace: st.WhiteSpace, Align: st.TextAlign,
+		Ellipsis: st.TextOverflow == style.TextOverflowEllipsis,
+	})
+	if t.Empty() {
+		return nil
+	}
+	b := &Box{Style: st, Text: t}
+	b.Lay = &layout.Node{Style: &b.Style, Measure: textMeasure{t}}
+	return b
 }
 
 // Document is a styled tree ready for layout and painting.
@@ -74,14 +105,22 @@ func (d *Document) build(c *style.Cascade, el *dom.Node, parent *style.Style) *B
 	if el.Tag() == "img" {
 		d.warn("<img> is not rendered yet: it is an empty box")
 	}
-	for _, k := range el.Children {
-		if k.Kind == dom.TextNode {
-			if !k.IsWhitespace() {
-				d.warn("text is not rendered until milestone M4")
+	kids := el.Children
+	for i := 0; i < len(kids); i++ {
+		var kb *Box
+		if kids[i].Kind == dom.TextNode {
+			// Adjacent text nodes form one anonymous run.
+			raw := kids[i].Text
+			for i+1 < len(kids) && kids[i+1].Kind == dom.TextNode {
+				i++
+				raw += kids[i].Text
 			}
-			continue
+			if kb = newText(raw, &b.Style); kb == nil {
+				continue
+			}
+		} else {
+			kb = d.build(c, kids[i], &b.Style)
 		}
-		kb := d.build(c, k, &b.Style)
 		b.Kids = append(b.Kids, kb)
 		b.Lay.Children = append(b.Lay.Children, kb.Lay)
 	}
@@ -247,7 +286,7 @@ func (b *Box) context(c paint.Canvas) {
 // are stacking contexts with a non-zero z-index.
 func (b *Box) collect(chain []*Box, neg, pos *[]deferred) {
 	for _, k := range b.Kids {
-		if k.hidden() {
+		if k.hidden() || k.Text != nil {
 			continue
 		}
 		if k.isContext() {
@@ -270,8 +309,15 @@ func (b *Box) collect(chain []*Box, neg, pos *[]deferred) {
 // walk paints b's descendants in tree order: boxes that are not stacking
 // contexts, and z-index 0 contexts atomically.
 func (b *Box) walk(c paint.Canvas) {
+	// Anonymous text boxes are not positioned: they paint with their
+	// parent, before its (positioned) element children (§6.4).
 	for _, k := range b.Kids {
-		if k.hidden() {
+		if k.Text != nil {
+			k.paintText(c)
+		}
+	}
+	for _, k := range b.Kids {
+		if k.hidden() || k.Text != nil {
 			continue
 		}
 		if k.isContext() {
@@ -297,6 +343,30 @@ func (d deferred) paint(c paint.Canvas) {
 	}
 	d.box.context(c)
 	for range d.clips {
+		c.PopClip()
+	}
+}
+
+// paintText draws an anonymous text box's lines.
+func (b *Box) paintText(c paint.Canvas) {
+	t := b.Text
+	if b.Style.Color.A == 0 {
+		return
+	}
+	if b.clips() {
+		c.PushClip(paint.Rect(b.Abs))
+	}
+	blk := t.Layout(b.Abs.W)
+	run := &paint.GlyphRun{Font: t.Face(), Size: t.Params().Size, Color: color(b.Style.Color)}
+	var gs []text.PlacedGlyph
+	for i := range blk.Lines {
+		gs = t.Glyphs(&blk.Lines[i], gs[:0])
+		for _, g := range gs {
+			run.Glyphs = append(run.Glyphs, paint.Glyph{ID: g.ID, X: b.Abs.X + g.X, Y: b.Abs.Y + g.Y})
+		}
+	}
+	c.Glyphs(run)
+	if b.clips() {
 		c.PopClip()
 	}
 }

@@ -28,9 +28,7 @@ browsers. The `<body>` element is the root of the rendered tree: it fills
 the viewport (§2.6) and can be styled with `body { ... }`. `<html>` is not
 part of the tree.
 
-Text runs are anonymous leaf nodes. Each run will be a flex item of its
-parent (M4). Until M4, non-whitespace text is not rendered and produces
-one warning.
+Text runs are anonymous leaf boxes, each a flex item of its parent (§7).
 
 ## 2. Layout model
 
@@ -93,13 +91,13 @@ percentages, the 148 CSS named colors, `transparent`, `currentcolor`;
 | `opacity` | `<number>` \| `<percent>` | `1` | no | clamped to 0..1; creates a stacking context when < 1 |
 | `box-shadow` | `none` \| `<x> <y> [<blur> [<spread>]] [<color>]` | `none` | no | one outer shadow (D16); color first or last; default `currentcolor` |
 | `color` | `<color>` | `black` | yes | |
-| `font-family` | any (stored verbatim) | | yes | used from M4 |
-| `font-size` | `<len>` in px/rem | `16px` | yes | used from M4 |
-| `font-weight` | `normal` \| `bold` \| 1..1000 | `400` | yes | used from M4 |
-| `line-height` | `normal` \| `<number>` \| `<len>` | `normal` | yes | used from M4 |
-| `text-align` | `left` \| `right` \| `center` | `left` | yes | used from M4 |
-| `white-space` | `normal` \| `nowrap` \| `pre` \| `pre-wrap` | `normal` | yes | used from M4 |
-| `text-overflow` | `clip` \| `ellipsis` | `clip` | no | used from M4 |
+| `font-family` | any (stored verbatim) | | yes | every family renders with the bundled Inter (§7.3) |
+| `font-size` | `<len>` in px/rem | `16px` | yes | §7 |
+| `font-weight` | `normal` \| `bold` \| 1..1000 | `400` | yes | §7 |
+| `line-height` | `normal` \| `<number>` \| `<len>` | `normal` | yes | §7 |
+| `text-align` | `left` \| `right` \| `center` | `left` | yes | §7 |
+| `white-space` | `normal` \| `nowrap` \| `pre` \| `pre-wrap` | `normal` | yes | §7 |
+| `text-overflow` | `clip` \| `ellipsis` | `clip` | no | §7 |
 
 `1rem` is always 16px. The root's font size does not change it, because
 `<html>` is not styleable.
@@ -300,7 +298,7 @@ resolves to the element's computed `color`.
 | D6 | No baseline alignment. | Not in the subset. |
 | D8 | `overflow` is one value for both axes. | Simplicity. |
 | D9 | *Removed:* width-only measurements no longer drop height information in subtrees that contain a column-wrap container (the only case where widths depend on heights). | |
-| D10 | `MeasureFunc` leaves (text, images) are sized as fit-content: width `max(min-content, min(max-content, available))`, then height at that width. | Same as CSS for text; images get their intrinsic size. |
+| D10 | Measured leaves (text, images) are sized as fit-content: width `max(min-content, min(max-content, available))`, then the height is asked for at exactly that width (`Measurer.Height(w)`). Leaves never derive a width from a height (no aspect ratio yet). | Same as CSS for text; images get their intrinsic size. |
 | D11 | An absolutely positioned box with both `top` and `bottom` set may be placed differently from Chromium when it does not fit its inset-modified containing block. This happens when that block has negative size, or when the box overflows it while `align-self` is not stretch or `height` is set. We place it at `top` plus the alignment offset, with no overflow correction. | Chromium's overflow handling here did not fit any consistent rule we could derive from 12 reduced cases. Rare in practice. |
 | D12 | Intrinsic (content-based) size of a **wrapping** container whose items have an explicit `flex-basis` can differ from Chromium. | Chromium's contribution rule for multi-line containers with explicit bases (7 reduced cases) does not match the single-line rule of §2.3. Not yet characterised. |
 | D13 | Cyclic percentages: percentage heights / bases inside a container whose height is content-derived but definite by §9.8 can resolve against a different intermediate size than Chromium in nested wrap cases. | 3 reduced cases; Chromium relayouts in a different order. |
@@ -347,6 +345,8 @@ padding box with the inner radii. `opacity < 1` becomes an opacity group.
    fit are scaled down uniformly (CSS Backgrounds §5.5). Inner border radii
    are the outer radii minus the adjacent border widths, so they can be
    elliptical.
+5. **Glyphs**: the baseline rounds to the nearest device pixel, the pen x
+   to the nearest quarter device pixel (§7.4).
 
 ### 6.2 Anti-aliasing and compositing
 
@@ -462,6 +462,112 @@ Every element is positioned (D2), which simplifies CSS 2 Appendix E:
   behind `body`'s background, and is hidden if `body` has one, as in
   browsers.
 
+## 7. Text (M4)
+
+### 7.1 Text runs and anonymous boxes
+
+* A maximal run of adjacent text nodes in an element is one **text run**.
+  After white-space processing (§7.2), a run with no characters left is
+  dropped (as CSS drops white-space-only text in flex containers).
+* Each run becomes an **anonymous box**: a flex item of its parent, with
+  the inherited properties of the parent (`color`, `font-*`,
+  `line-height`, `text-align`, `white-space`) and initial values for all
+  others (`flex: 0 1 auto`, `min-width: auto`, no padding or border).
+  This is exactly CSS's anonymous block for text in a flex container.
+* So text and elements never share a line: `a <span>b</span> c` is three
+  flex items (stacked in a column by default, D1). There is no inline
+  formatting across elements.
+* **D24**: if the parent has `text-overflow: ellipsis` and `overflow`
+  other than `visible`, the anonymous box takes that `overflow` and
+  `text-overflow` (so `<div class=title>Long title</div>` ellipsizes). In
+  CSS these properties do not inherit, so text directly inside a flex
+  container never shows an ellipsis.
+* The box is a leaf with a `layout.Measurer`: `Widths()` returns the
+  min-content and max-content widths, and `Height(w)` lays the text out
+  at content width `w` and returns lines × line height. The engine sizes
+  it as fit-content (D10) and asks for the height at exactly the final
+  width.
+* Painting: anonymous boxes are not positioned, so a positioned element's
+  text paints right after its own background and border, before its
+  element children (CSS 2 Appendix E, §6.4). An ellipsizing box clips its
+  glyphs to its border box.
+
+### 7.2 White space, breaking and lines
+
+* `white-space: normal | nowrap`: tabs, newlines and spaces collapse to
+  one space; spaces at the start and end of the run are removed.
+  `pre | pre-wrap`: everything is preserved; `\r\n` and `\r` become
+  `\n`; a final newline does not start an empty line. Tabs advance to the
+  next multiple of 8 space widths from the start of the line.
+* Break opportunities: Unicode line breaking (UAX #14, via
+  `go-text/typesetting/segmenter`), tailored to match Chromium's ICU rules:
+  no break after `/` or `!` directly followed by the next word. Newlines
+  are forced breaks with `pre` and `pre-wrap`. `nowrap` and `pre` never
+  wrap. A word wider than the line overflows (`overflow-wrap: normal`).
+* Lines are filled greedily: the next word is added if the line, without
+  its trailing spaces, still fits the content width.
+* Spaces at the end of a line hang (do not count for fitting, alignment or
+  intrinsic sizes), except with `pre` (they count) and with `pre-wrap`
+  before a forced break or the end of the run, where they only
+  **conditionally hang**: they count when they fit (CSS Text 3 §4.1.3).
+* `text-align` offsets each line within the box's content width; centering
+  rounds down to 1/64 px. Lines wider than the box start at its left
+  edge.
+* `text-overflow: ellipsis` (with D24): a line wider than the box is cut at
+  the last character boundary for which the content plus `…` (U+2026)
+  fits, and `…` is drawn after it.
+
+### 7.3 Fonts, shaping and metrics
+
+* One family is bundled: **Inter 4.1** Regular and Bold (static TrueType,
+  SIL Open Font License, `internal/text/fonts/OFL.txt`). System fonts are
+  never read. Every `font-family` value uses it (no warning: app CSS often
+  lists stacks). `font-weight` above 500 selects Bold, otherwise Regular,
+  which is CSS font matching for faces at 400 and 700. No synthetic bold
+  or italics.
+* Shaping: HarfBuzz (go-text port) with default features (kerning,
+  ligatures, contextual alternates), script Latin, language `en`,
+  left-to-right. Bidi and complex scripts are not supported. The text is
+  shaped in **font units** (integer advances), so all later steps are
+  exact integer arithmetic.
+* Widths (matching Chromium to 1/64 px): a line's width is its advance
+  sum × size / unitsPerEm rounded **up** to 1/64 px. For min-content, a
+  word's width is measured as Chromium does: both ends are rounded up to
+  1/64 px in the coordinates of its hard line, and the width is their
+  difference.
+* `font-size` is a length in 1/64 px, so sizes like `13.3px` are
+  quantized (to 13.296875px).
+* `line-height: normal` is round(ascent) + round(descent) + round(lineGap)
+  in whole pixels, from the `hhea` metrics at the font size (Inter: 0.96875
+  and 0.2412 em, no gap); a number is number × font-size rounded down to
+  1/64 px; a length is used as is. The baseline is the line top plus
+  round(ascent) plus half the leading, the leading being line height −
+  (round(ascent) + round(descent)) and half of it rounded down to a whole
+  pixel.
+
+### 7.4 Glyph rendering
+
+* Glyph outlines are rasterized by flexui (`internal/text/mask.go`) with
+  integer math only: outline points in half font units (exact), scaled to
+  1/256 device px; curves flattened to under 1/16 px error; coverage from
+  16 sample rows per pixel with exact horizontal span coverage, scaled to
+  0..255 with rounding. No hinting. Grayscale anti-aliasing only.
+* Placement (§6.1 rule 5): the glyph origin's x is rounded to the nearest
+  quarter device pixel (four cached variants per glyph), the baseline to
+  the nearest device pixel. The font size scales exactly with the device
+  scale; layout does not change with the scale.
+* The mask is composited with the text color as coverage (§6.3), so
+  `color` alpha and clips apply as for any fill.
+
+### 7.5 Text deviations
+
+| # | Deviation | Reason |
+|---|---|---|
+| D21 | Glyph anti-aliasing differs from Chromium (FreeType coverage with Skia's luminance-dependent contrast/gamma "preblend"). Glyph positions agree; individual edge pixels differ, by up to about 50 of 255 levels, mean error about 0.3-0.5 levels per text document. | Integer-only own rasterizer; deterministic everywhere. |
+| D22 | Layout is independent of the device scale. Chromium rounds `line-height: normal` metrics in device pixels, so at 2x its lines can be up to 0.5 px (one device pixel) shorter. | Same layout on every display; HiDPI is a paint-time scale only. |
+| D23 | Kerning between the last character of a soft-wrapped line and the following space is kept. Chromium sometimes reshapes the line without it (we could not derive when), so such a line can be up to ~0.8 px wider in Chromium (2 of 300 random documents). | Rare; affects alignment by under 1 px. |
+| D24 | Text in an element with `text-overflow: ellipsis` and clipping `overflow` ellipsizes (§7.1); in CSS it would not, because the anonymous box does not inherit them. | What authors expect; Chromium comparisons wrap text runs in an equivalent block that takes these properties. |
+
 ## 5. Verification
 
 Layout behavior is checked against Chromium:
@@ -483,7 +589,7 @@ Layout behavior is checked against Chromium:
   and check that steady-state frames allocate nothing.
 * RenderHTML output is checked against **Chromium screenshots**
   (`internal/render/chrome_test.go`). The documents in
-  `testdata/render/docs` (non-text, 13 documents, 3 also at 2x) are
+  `testdata/render/docs` (17 documents, 4 also at 2x) are
   screenshotted by `scripts/screenshot.cjs` (`make crosscheck`) with a
   base sheet encoding D1-D4 and D20. For each one the test reports the max
   error, the mean absolute channel error, and the share of pixels off by
@@ -492,6 +598,19 @@ Layout behavior is checked against Chromium:
   their deviation (D17 shadows, D18 curve AA, D19 opacity rounding) and
   bounds about 1.5x their measured error. Current numbers are in
   `spec/STATUS.md`.
+* Text layout is compared with Chromium **exactly** (1/64 px): the border
+  box of every element and anonymous text box, and every line's text, x,
+  y, width and height (`internal/render/text_test.go`). Chromium loads the
+  bundled fonts through `@font-face`, and every text run is wrapped in an
+  `<x-t>` block equivalent to the anonymous box (`scripts/flexui-page.cjs`,
+  `scripts/textcheck.cjs`). Inputs: 12 hand-written documents in
+  `testdata/text/docs` (wrapping, sizes, weights, alignment, line height,
+  white space, ellipsis, row items, nested content-sized boxes, mixed
+  content) and 300 seeded random documents. Accepted mismatches are listed
+  in `knownTextDiffs` with a deviation and a tolerance (D14 rounding of
+  flex sizes: 2/64 px; D23: 0.5 px); the test fails if a listed case
+  starts matching exactly. Text RenderHTML documents are also in the
+  screenshot diff, with bounds for D21/D22.
 * `go test ./internal/layout -run TestReduce -v -args -reduce=CASE`
   minimizes a failing case against a live Chromium
   (`scripts/chrome-serve.cjs`). It deletes subtrees and declarations while

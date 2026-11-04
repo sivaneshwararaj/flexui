@@ -29,10 +29,10 @@ Implementation (`internal/`, free to change):
 | `internal/geom` | `Unit` (fixed-point 1/64 px), `Rect`, `Size`, `Edges`, 128-bit `MulDiv`. | stdlib |
 | `internal/style` | Computed `Style` (layout, paint, text props), declaration parser, colors, style sheets, selectors, cascade (`Cascade.Compute`) over a small `Element` interface. | `geom` |
 | `internal/layout` | Flexbox engine. Input: tree of `*layout.Node`. Output: `Node.Box`. | `geom`, `style` |
-| `internal/paint` | `Canvas` draw interface, `List` display list, `Raster` integer-only software rasterizer. | `geom` |
+| `internal/paint` | `Canvas` draw interface (incl. `Glyphs` runs over a `GlyphSource`), `List` display list, `Raster` integer-only software rasterizer. | `geom` |
 | `internal/dom` | HTML → node tree (`<body>` root, `<style>` collection); `*dom.Node` implements `style.Element`. | `golang.org/x/net/html`, `style` |
 | `internal/render` | dom → cascade → layout → paint order (stacking contexts) → display list → raster. `Build`, `Document.Layout/Paint`, `Render`, `RenderInto`. | all of the above |
-| `internal/text` | Font, shaping, line breaking (M4). | `go-text/typesetting` |
+| `internal/text` | Bundled Inter faces, shaping (font units), line breaking, `Text` layout (lines, intrinsic widths, ellipsis), glyph rasterizer (`paint.GlyphSource`). | `go-text/typesetting`, `geom`, `style`, `paint` |
 
 `examples/` is a separate module (`replace` to `../`) that uses only the
 public API, proving the library works for an external consumer.
@@ -125,8 +125,29 @@ declaration strings. Each case is checked two ways:
   context (own box, negative z, tree-order walk with z=0 contexts inline,
   positive z), `collect` finds out-of-order contexts with the overflow
   clips of their ancestors.
+* Text runs become anonymous `Box`es (`Box.Text`, `El == nil`) whose
+  layout node measures through `textMeasure` (`layout.Measurer`). They
+  paint inside their parent before its element children.
 * Tests: `golden_test.go` renders `testdata/render/docs/*.html` (size in
   the first-line comment) to `testdata/render/golden`; `chrome_test.go`
   compares with Chromium screenshots (`testdata/render/chrome`, made by
   `scripts/screenshot.cjs` via `make crosscheck`) and reports max/mean
   error.
+
+## Text (`internal/text/`)
+
+* `font.go`: embedded Inter faces (`ForWeight`), HarfBuzz font at scale =
+  unitsPerEm so shaped advances are integers.
+* `coverage.go`: workaround for a go-text digest bug (rewrites range
+  coverages to glyph lists after parsing; `TestKerning` guards it).
+* `layout.go`: `New(raw, Params)` processes white space, shapes, finds
+  break segments and pen positions; `MinContent`/`MaxContent`,
+  `Layout(width)` (cached last width) → `Block` of `Line`s, `Height`,
+  `Glyphs(line)`. The Chromium rounding rules are in `lineSpan` / `span`.
+* `mask.go`: glyph outline → coverage mask (integer flattening and
+  16-row scanline coverage), cached by (glyph, ppem, quarter-pixel x).
+* Chromium comparison: `scripts/flexui-page.cjs` loads the fonts with
+  `@font-face` and wraps text runs in `<x-t>` (the anonymous box);
+  `scripts/textcheck.cjs` dumps boxes and lines; `internal/render/text_test.go`
+  compares (docs in `testdata/text/docs`, 300 seeded random documents in
+  `text_random_test.go`).

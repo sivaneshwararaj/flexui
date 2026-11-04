@@ -40,12 +40,18 @@ type Opt struct {
 
 func some(v geom.Unit) Opt { return Opt{v, true} }
 
-// MeasureFunc reports the content-box size of a leaf. known sizes, if set,
-// are the final content-box sizes for that axis; avail describes the
-// space available to the content box. The engine asks for widths with
-// availW = MinContent or MaxContent, and for heights with a known width.
-// Implementations must be deterministic and should be cheap.
-type MeasureFunc func(knownW, knownH Opt, availW, availH Avail) geom.Size
+// Measurer sizes the content of a leaf (text, images). The engine asks for
+// the intrinsic widths, picks the content-box width (fit-content, or the
+// size imposed by the leaf's style or its container), and then asks for
+// the height at exactly that width. Implementations must be deterministic
+// and should cache: they are called many times per layout.
+type Measurer interface {
+	// Widths returns the min-content and max-content content-box widths.
+	Widths() (min, max geom.Unit)
+	// Height returns the content-box height when the content box is w
+	// wide.
+	Height(w geom.Unit) geom.Unit
+}
 
 // Box is the layout result for one node.
 type Box struct {
@@ -65,7 +71,7 @@ type Node struct {
 	Children []*Node
 	// Measure sizes leaf content (text, images). It is ignored for nodes
 	// with children. A leaf without Measure has zero content size.
-	Measure MeasureFunc
+	Measure Measurer
 	// Box is written by Layout.
 	Box Box
 
@@ -206,29 +212,22 @@ func (n *Node) leaf(in input) geom.Size {
 	b := resolveBox(n.Style, in.parent)
 	sz, _ := ownSizes(&b, in)
 	if (!sz[0].OK || !sz[1].OK) && n.Measure != nil {
-		var kh Opt
-		if sz[1].OK {
-			kh = some(geom.Max(0, sz[1].V-b.pb[1]))
-		}
-		anyH := Avail{Kind: MaxContent}
 		if !sz[0].OK {
 			// Width: fit-content within the available space.
+			minc, maxc := n.Measure.Widths()
 			var w geom.Unit
-			av := innerAvail(in.avail[0], b.pb[0])
-			if av.Kind == Definite {
-				w = n.Measure(Opt{}, kh, Avail{Kind: MaxContent}, anyH).W
-				if w > av.V {
-					minc := n.Measure(Opt{}, kh, Avail{Kind: MinContent}, anyH).W
-					w = geom.Max(minc, av.V)
-				}
-			} else {
-				w = n.Measure(Opt{}, kh, av, anyH).W
+			switch av := innerAvail(in.avail[0], b.pb[0]); av.Kind {
+			case Definite:
+				w = geom.Max(minc, geom.Min(maxc, av.V))
+			case MinContent:
+				w = minc
+			default:
+				w = maxc
 			}
 			sz[0] = some(b.clampIf(0, w+b.pb[0], in))
 		}
 		if !sz[1].OK && !in.wantW {
-			kw := geom.Max(0, sz[0].V-b.pb[0])
-			h := n.Measure(some(kw), Opt{}, Avail{Definite, kw}, anyH).H
+			h := n.Measure.Height(geom.Max(0, sz[0].V-b.pb[0]))
 			sz[1] = some(b.clampIf(1, h+b.pb[1], in))
 		}
 	}

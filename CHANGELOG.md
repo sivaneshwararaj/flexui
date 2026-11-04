@@ -6,6 +6,13 @@ versioning with `v0.x` tags until the API settles.
 ## Unreleased
 
 ### Added
+- M4 text: bundled Inter 4.1 (OFL), shaping, line breaking, wrapping,
+  `white-space`, `text-align`, `line-height`, `text-overflow: ellipsis`,
+  integer-only glyph rasterizer; text is measured in layout through the
+  new `layout.Measurer` (`Widths`, `Height(w)`). Text layout is compared
+  exactly against Chromium (bundled fonts loaded via `@font-face`) on
+  hand-written and 300 random documents. New dependencies:
+  `github.com/go-text/typesetting` v0.3.5, `golang.org/x/image` v0.23.0.
 - M3: `flexui.RenderHTML(html, css, w, h)` and `CheckHTML`; `App.Frame`
   renders views. HTML5 parsing (`golang.org/x/net/html` v0.38.0), style
   sheets, selectors and the cascade, inheritance, colors,

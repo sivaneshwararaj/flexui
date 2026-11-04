@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Regenerates testdata/layout/chrome.json: renders every layout test case
-# in headless Chromium and records the element rectangles. Requires node
-# with the playwright package and a Chromium it can launch.
+# Regenerates the Chromium oracle data with headless Chromium (needs node
+# with the playwright package):
+#  * testdata/layout/chrome.json: element rectangles of the layout cases;
+#  * testdata/render/chrome: screenshots of the RenderHTML documents;
+#  * testdata/text: text layout (boxes and lines) of the text documents.
+# Pages are set up by scripts/flexui-page.cjs (base sheet, bundled fonts).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 tmp="$(mktemp -d)"
@@ -15,3 +18,9 @@ echo "wrote testdata/layout/chrome.json ($(grep -c '^  "' testdata/layout/chrome
 hidpi=$(grep -o 'hidpiDocs = map\[string\]bool{[^}]*}' internal/render/golden_test.go | grep -o '"[a-z_0-9]*"' | tr -d '"' | paste -sd, -)
 node scripts/screenshot.cjs testdata/render/docs testdata/render/chrome "$hidpi"
 echo "wrote testdata/render/chrome ($(ls testdata/render/chrome | wc -l) screenshots)"
+
+# Text layout: hand-written documents and the seeded random ones.
+node scripts/textcheck.cjs testdata/text/docs >testdata/text/chrome.json
+go test ./internal/render -run '^TestEmitText$' -count=1 -args -emit-text="$tmp/text" >/dev/null
+node scripts/textcheck.cjs "$tmp/text" >testdata/text/random.json
+echo "wrote testdata/text/chrome.json and random.json"
