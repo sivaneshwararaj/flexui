@@ -72,7 +72,8 @@ type Ctx struct {
 	app  *App
 	ev   *view.Event
 	stop bool
-	// Event is the event type: "click", "keydown".
+	// Event is the event type: "click", "keydown", "focus", "blur",
+	// "input" or "change".
 	Event string
 	// ID is the id attribute of the element the handler is declared on
 	// ("" if it has none).
@@ -107,6 +108,14 @@ func (c *Ctx) StopPropagation() { c.stop = true }
 // adds). Handlers must use Ctx methods, not App methods that take the
 // app's lock (Focus, Value, Bounds, ...), which would deadlock.
 func (c *Ctx) Focus(id string) { c.app.pendingFocus, c.app.hasPendingFocus = id, true }
+
+// InputValue returns the current text of the <input> with the given id
+// (the handler-safe form of App.Value, e.g. to read an uncontrolled field
+// in a Save handler).
+func (c *Ctx) InputValue(id string) string {
+	v, _ := c.app.view.InputValue(id)
+	return v
+}
 
 // PreventDefault suppresses the default action of the event: for keydown,
 // focus traversal (Tab) and activation (Enter, Space).

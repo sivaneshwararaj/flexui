@@ -6,6 +6,10 @@ versioning with `v0.x` tags until the API settles.
 ## Unreleased
 
 ### Added
+- Documentation for users and coding agents: `README.md`,
+  `docs/GUIDE.md`, `AGENTS.md`, `llms.txt`; Go examples
+  (`example_test.go`) checked by `go test`. `Ctx.InputValue(id)` reads an
+  input inside handlers.
 - `platform/windows` (x/sys/windows, no cgo) with `windows.Run`, staged
   verification commands and README (compile-checked, not yet run);
   `-window` on Windows for the counter and demo examples. Dependency:
