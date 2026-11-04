@@ -1,5 +1,7 @@
 # Status
 
+Last updated after M2. Next step: M3 (HTML and styles to pixels).
+
 | Milestone | State |
 |---|---|
 | M0 Spec and scaffolding | done |
@@ -15,6 +17,11 @@
 
 ## Works
 
+* Public API (root package `flexui`): `New`, `Options`, `App.SetView`,
+  `App.SetViewFunc`, `App.Handle`, `Ctx`, `App.Config`; `App` implements
+  `platform.AppHandler`. Implementation lives under `internal/`.
+  `examples/` is a separate module (`replace ../`) using only the public
+  API (`examples/hello`). MIT `LICENSE`, `CHANGELOG.md`.
 * `style`: declaration parsing for all layout properties of the subset,
   shorthands (`margin`, `padding`, `border-width`, `gap`, `flex`), px/%/rem,
   warnings for unsupported input. No floats: decimals are parsed straight
@@ -26,7 +33,7 @@
   percentages with §9.8 definiteness, intrinsic (fit-content /
   min-content / max-content) sizing, relative and absolute positioning,
   `display: none`, scrollable-overflow extents (`Box.ContentW/H`).
-* Layout is verified against Chromium: 111 hand-written cases plus 2400
+* Layout is verified against Chromium: 110 hand-written cases plus 2400
   seeded random trees (`internal/layout/random_test.go`), reference data in
   `testdata/layout/chrome.json` (`make crosscheck`). All match to 1/64 px
   except 25 random cases (about 1%), which are listed with deviation
@@ -42,11 +49,13 @@
   HiDPI scale. Pixel snapping as in `spec/SUBSET.md` §6. 8 golden PNGs,
   snapping/tiling invariant tests, zero allocations per steady-state frame.
   A 320x200 card frame at 2x (shadow, clip, border) renders in ~2 ms.
-* Determinism: integer-only layout; tests also pass with `GOARCH=386`.
+* Determinism: layout and rasterization are integer-only; all tests,
+  including the paint goldens, also pass with `GOARCH=386`.
 * `platform`: interface; `headless` platform delivers events and renders
   frames into an image.
-* `scripts/check-portability.sh`: builds and vets 5 targets with
-  `CGO_ENABLED=0` and checks the core import rule.
+* `scripts/check-portability.sh`: builds and vets the library and the
+  examples module for 5 targets with `CGO_ENABLED=0`, and checks that the
+  root package and `internal/` never import platform backends.
 
 ## Stubbed
 
@@ -62,6 +71,9 @@
   both vertical insets that overflow, intrinsic sizes of wrapping
   containers with explicit `flex-basis`, some nested cyclic percentages,
   and 2/64 px rounding differences.
+* Paint deviations D15-D17 (`spec/SUBSET.md` §6): one `border-color` for
+  all sides, a single outer `box-shadow`, and a box-blur approximation of
+  the Gaussian shadow blur.
 * `layout` allocates one item slice per container per pass. Fine for now;
   reuse buffers if profiling shows it matters.
 * The root `flexui.App` does not render views yet (M3) or run handlers
