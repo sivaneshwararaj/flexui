@@ -1,6 +1,6 @@
 # Status
 
-Last updated after the first macOS run (stages 1-5, 7 pass). Next steps: stage 6 results, IME composition (rest of M8).
+Last updated after the first macOS run (stages 1-5, 7 pass). Next steps: Windows stage results, IME composition (rest of M8).
 
 | Milestone | State |
 |---|---|
@@ -12,7 +12,7 @@ Last updated after the first macOS run (stages 1-5, 7 pass). Next steps: stage 6
 | M5 Handlers and state | done |
 | M6 Interaction | done |
 | M5b Inline formatting, images, default styles, disabled, focus events, scrollbars | done |
-| M7 Portability gate + macOS | gate done; macOS stages 1-5 and 7 passed on an Apple-silicon Mac (macOS 27.2); stage 6 (text input, clipboard), resizing and Intel Macs unverified |
+| M7 Portability gate + macOS | gate done; macOS stages 1-7 passed on an Apple-silicon Mac (macOS 27.2), incl. typing and resizing; clipboard, scale changes between displays and Intel Macs unverified |
 | M8 Text input | M8a done (editing model, headless); IME composition with the macOS step |
 | Windows backend | written and compile-checked (windows/amd64, arm64); **never run** (see platform/windows/README.md) |
 | M9 Demo app | done headless (`examples/demo`); the window is untested |
@@ -197,9 +197,10 @@ Last updated after the first macOS run (stages 1-5, 7 pass). Next steps: stage 6
   text, system clipboard, `darwin.Run(app)`; seven staged commands with
   `EXPECT`/`RESULT` lines and `-debug` logs; `examples/counter -window`.
   Verified by the user on an Apple-silicon MacBook Air (macOS 27.2,
-  scale 2): stages 1-5 and 7 pass, including a byte-identical
-  presented frame (stage 3). Not yet verified: stage 6 (text input,
-  clipboard), live resizing and scale changes, Intel Macs. Details in
+  scale 2): stages 1-7 pass, including a byte-identical presented frame
+  (stage 3), live resizing, and typing into inputs with input/change
+  events (stage 6). Not yet verified: the system clipboard and
+  Option/Cmd caret keys, scale changes between displays, Intel Macs. Details in
   `platform/darwin/README.md`.
 
 ## Stubbed
