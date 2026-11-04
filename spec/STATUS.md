@@ -1,6 +1,6 @@
 # Status
 
-Last updated after the first macOS run (stages 1-5, 7 pass). Next steps: stage 6 results, IME composition (rest of M8).
+Last updated after the macOS run (stages 1-7 pass). Next steps: Windows stage results, IME composition (rest of M8).
 
 | Milestone | State |
 |---|---|
@@ -12,9 +12,9 @@ Last updated after the first macOS run (stages 1-5, 7 pass). Next steps: stage 6
 | M5 Handlers and state | done |
 | M6 Interaction | done |
 | M5b Inline formatting, images, default styles, disabled, focus events, scrollbars | done |
-| M7 Portability gate + macOS | gate done; macOS stages 1-5 and 7 passed on an Apple-silicon Mac (macOS 27.2); stage 6 (text input, clipboard), resizing and Intel Macs unverified |
+| M7 Portability gate + macOS | gate done; macOS stages 1-7 passed on an Apple-silicon Mac (macOS 27.2), incl. typing and resizing; clipboard, scale changes between displays and Intel Macs unverified |
 | M8 Text input | M8a done (editing model, headless); IME composition with the macOS step |
-| Windows backend | written and compile-checked (windows/amd64, arm64); **never run** (see platform/windows/README.md) |
+| Windows backend | stages 1-2 pass on Windows (build 26300); stages 3-7 not run yet (see platform/windows/README.md) |
 | M9 Demo app | done headless (`examples/demo`); the window is untested |
 
 ## Works
@@ -103,8 +103,9 @@ Last updated after the first macOS run (stages 1-5, 7 pass). Next steps: stage 6
   mouse/wheel/keys/`WM_CHAR` text, clipboard, `windows.Run(app)`; seven
   staged commands with `EXPECT`/`RESULT` lines and `-debug` logs (shared
   content in `platform/internal/stagekit`); `examples/counter` and
-  `examples/demo` take `-window` on Windows too. **It compiles for
-  windows/amd64 and windows/arm64 but has never been run.**
+  `examples/demo` take `-window` on Windows too. Verified by the user:
+  stages 1-2 (Win32 bindings, window, presentation, 125% DPI sizing) on
+  Windows build 26300; stages 3-7 not run yet.
 * Demo app (M9, `examples/demo`): a contacts manager (searchable list
   with selection and scrolling, edit form with Save/Revert enabled only
   when dirty, delete confirmation modal with Escape and backdrop click,
@@ -197,9 +198,10 @@ Last updated after the first macOS run (stages 1-5, 7 pass). Next steps: stage 6
   text, system clipboard, `darwin.Run(app)`; seven staged commands with
   `EXPECT`/`RESULT` lines and `-debug` logs; `examples/counter -window`.
   Verified by the user on an Apple-silicon MacBook Air (macOS 27.2,
-  scale 2): stages 1-5 and 7 pass, including a byte-identical
-  presented frame (stage 3). Not yet verified: stage 6 (text input,
-  clipboard), live resizing and scale changes, Intel Macs. Details in
+  scale 2): stages 1-7 pass, including a byte-identical presented frame
+  (stage 3), live resizing, and typing into inputs with input/change
+  events (stage 6). Not yet verified: the system clipboard and
+  Option/Cmd caret keys, scale changes between displays, Intel Macs. Details in
   `platform/darwin/README.md`.
 
 ## Stubbed

@@ -1,0 +1,22 @@
+# flexui
+
+> Pure-Go desktop UI library: HTML + a flexbox-only CSS subset for views, Go for state and handlers, rendered by its own deterministic software renderer (no browser, no JS, no cgo). Module: github.com/sivaneshwararaj/flexui (Go 1.24+).
+
+## Docs
+
+- [Guide](docs/GUIDE.md): model, full public API, events, inputs, HTML/CSS subset, testing, pitfalls (start here)
+- [Agent notes](AGENTS.md): the essentials in nine points
+- [Spec](spec/SUBSET.md): exact supported subset and deviations from browsers
+- [Status](spec/STATUS.md): what works, what is stubbed, known gaps
+- [Architecture](spec/ARCHITECTURE.md): internals (for changing flexui)
+
+## Examples
+
+- [demo](examples/demo): contacts manager (list, form, modal) with headless golden tests
+- [counter](examples/counter): minimal stateful app, `-window` for macOS/Windows
+- [Go examples](example_test.go): RenderHTML, App with headless session, controlled and uncontrolled inputs
+
+## Platforms
+
+- [macOS backend](platform/darwin/README.md)
+- [Windows backend](platform/windows/README.md)

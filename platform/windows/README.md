@@ -1,10 +1,17 @@
 # platform/windows: Windows window (x/sys/windows, no cgo)
 
-**Status: written and compile-checked only.** This backend was written on
-Linux. It builds and passes `go vet` for `windows/amd64` and
-`windows/arm64` with `CGO_ENABLED=0` (`scripts/check-portability.sh`), but
-it has **never been run**. Nothing here is claimed to work until the
-stages below pass on a Windows machine.
+**Status: partly verified on Windows.** This backend was written on Linux
+and compile-checked there for `windows/amd64` and `windows/arm64` with
+`CGO_ENABLED=0`. The user ran the first stages on Windows (build 26300):
+
+| Stage | Result |
+|---|---|
+| 1 | Pass: all Win32 functions resolved; `Windows 10.0 build 26300`. |
+| 2 | Pass: quadrants red/green/blue/white in the right places (top-down DIB and BGRA conversion correct). The client area in the screenshot is about 600x400 pixels for 480x320 logical pixels, consistent with 125% scaling (DPI sizing works). |
+| 3-7 | Not run yet. |
+
+Everything else (stages 3-7: flexui frames, resizing, DPI changes,
+input, text, clipboard, closing) is still untested.
 
 ## How it works
 
@@ -64,9 +71,12 @@ The expected images for stages 2 and 3 are the same as macOS's:
 `review/M7/stage2_expected.png`, `review/M7/stage3_expected*.png` (copied
 into `review/windows`).
 
-## Untested (everything), and specific risks
+## Untested parts and specific risks
 
-* **All of it has only been compiled.** In particular:
+Stages 1-2 confirm the Win32 bindings, window creation, presentation and
+initial DPI sizing. Still unverified, with the risks noted before running:
+
+* In particular:
   * The hand-written structure layouts (`WNDCLASSEXW`, `MSG`,
     `PAINTSTRUCT`, `BITMAPINFOHEADER`, `TRACKMOUSEEVENT`) and
     `DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2` as the handle value -4.
