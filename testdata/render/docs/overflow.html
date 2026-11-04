@@ -1,0 +1,15 @@
+<!-- size: 300x180 -->
+<html><head><style>
+body { background-color: #f4f5f7; padding: 16px; flex-direction: row; gap: 16px; align-items: flex-start; }
+.clip { width: 80px; height: 80px; overflow: hidden; background-color: #ffffff; border: 2px solid #1e222a; }
+.big { width: 120px; height: 50px; background-color: #3478f6; margin-left: -20px; flex-shrink: 0; }
+.round { border-radius: 20px; }
+.round .big { background-color: #e6463c; }
+.circle { border-radius: 50%; border: 0; }
+.circle .big { background-color: #28aa64; height: 120px; }
+.abs { position: absolute; left: 50px; top: 50px; width: 60px; height: 60px; background-color: #fac828; }
+</style></head><body>
+<div class="clip"><div class="big"></div><div class="abs"></div></div>
+<div class="clip round"><div class="big"></div><div class="abs"></div></div>
+<div class="clip circle"><div class="big"></div></div>
+</body></html>
