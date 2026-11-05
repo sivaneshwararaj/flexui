@@ -9,6 +9,11 @@ import (
 	"html"
 
 	"github.com/sivaneshwararaj/flexui"
+	_ "github.com/sivaneshwararaj/flexui/fonts/arabic"
+	_ "github.com/sivaneshwararaj/flexui/fonts/cjk"
+	_ "github.com/sivaneshwararaj/flexui/fonts/devanagari"
+	_ "github.com/sivaneshwararaj/flexui/fonts/hebrew"
+	_ "github.com/sivaneshwararaj/flexui/fonts/tamil"
 	"github.com/sivaneshwararaj/flexui/platform/darwin"
 )
 
@@ -20,7 +25,7 @@ func main() {
 	debug := flag.Bool("debug", false, "log every step to stderr")
 	flag.Parse()
 	darwin.Debug = *debug
-	fmt.Println("EXPECT: two text fields. Click one and type: characters appear, the caret moves, and \"Echo\" mirrors the first field. Arrow keys, Option+Arrow (word), Cmd+Arrow (line), Shift to select, Backspace, Cmd+A/C/X/V all work; Cmd+V pastes text copied in another app, and Cmd+C in a field can be pasted elsewhere. Leaving a field prints a RESULT change line. Accented input via dead keys and IME composition is NOT expected to work yet.")
+	fmt.Println("EXPECT: two text fields. Click one and type: characters appear, the caret moves, and \"Echo\" mirrors the first field. Arrow keys, Option+Arrow (word), Cmd+Arrow (line), Shift to select, Backspace, Cmd+A/C/X/V all work; Cmd+V pastes text copied in another app, and Cmd+C in a field can be pasted elsewhere. Leaving a field prints a RESULT change line. Text in other scripts (Tamil, Hindi, Arabic, Hebrew, Chinese, Japanese kana) is drawn with the bundled font packs; dead keys (Option+e e) should give é. IME composition is stage 9.")
 	name := ""
 	app := flexui.New(flexui.Options{Title: "flexui stage 6", Width: 380, Height: 200})
 	app.SetViewFunc(func() string {

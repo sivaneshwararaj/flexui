@@ -283,7 +283,8 @@ import (
 
 Text is split by script and each cluster Inter lacks is drawn with the
 first pack that has it, as Chromium does. Without a pack, such text is
-drawn as boxes (the text itself is kept intact). Put `lang="mr"` etc.
+drawn as boxes (the text itself is kept intact) and `app.Warnings()`
+names the pack to import. Put `lang="mr"` etc.
 on an element for language-specific letter forms. See
 [fonts/README.md](../fonts/README.md).
 

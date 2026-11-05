@@ -24,7 +24,11 @@ stage 6 again on macOS.
   run**. Stage 9 (`go run ./platform/<darwin|windows>/stages/stage9`)
   prints RESULT lines; the READMEs list what is untested and the risks.
 * macOS typing now goes through `interpretKeyEvents:` (also for plain
-  text): re-run stage 6 on a Mac to confirm typing still works.
+  text): stage 6 re-run by the user, typing (Tamil keyboard) works; the
+  boxes seen were the stage not importing font packs (fixed).
+* Text no registered font can draw now gives a warning naming the pack
+  to import (`App.Warnings`, `CheckHTML`), so missing packs are not
+  silent.
 
 ### IME composition (step 8)
 

@@ -9,7 +9,7 @@ import (
 // Japanese input method on the platform).
 func Expect9(ime string) string {
 	return "a window with two fields. Switch to a Japanese input method (" + ime + "), click the first field and type \"kanji\": " +
-		"the marked text appears inside the field, underlined (Japanese glyphs show as boxes: no CJK font pack is bundled yet), " +
+		"the marked text appears inside the field, underlined, in Japanese glyphs (CJK font pack), " +
 		"with RESULT lines \"compose ...\" and \"input ... composing=true\"; the candidate window opens next to the caret (not in a screen corner) after Space; " +
 		"Enter commits: RESULT \"commit ...\" and the underline disappears. Escape during composition cancels: RESULT \"cancel\" and the marked text goes away. " +
 		"Clicking the other field during composition commits the marked text as it is. The second field is right to left: marked text appears at its right side."

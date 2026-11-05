@@ -6,6 +6,9 @@ versioning with `v0.x` tags until the API settles.
 ## Unreleased
 
 ### Added
+- A warning for characters no font can draw, naming the font pack to
+  import (e.g. `import _ ".../fonts/tamil"`); stages 6, 8 and 9 import
+  all packs.
 - `fonts/cjk` (Noto Sans SC subset, Regular; Chinese and Japanese kana).
   Packs may omit the Bold face. Chinese and Japanese text checked
   against Chromium; CJK punctuation trimming is not done (D34).
