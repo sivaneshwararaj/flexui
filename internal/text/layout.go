@@ -16,6 +16,11 @@ type Style struct {
 	// Lang is the content language (the inherited lang attribute, BCP 47;
 	// "" for none). It selects language-specific glyph forms.
 	Lang string
+	// IsoID (> 0) marks the inline element whose text this is as a bidi
+	// isolate (the dir attribute) of direction IsoDir (1 ltr, 2 rtl, 3
+	// auto); IDs tell elements apart within a paragraph.
+	IsoID  int
+	IsoDir uint8
 }
 
 // Params are the properties of a paragraph: the style of the block that
@@ -74,6 +79,9 @@ type Text struct {
 	// text has right-to-left (or mixed) levels.
 	lvl  []uint8
 	bidi bool
+	// ctl holds the levels of the bidi isolate controls before rune i
+	// (they are not in runes; reordering keeps them as separators).
+	ctl map[int][]uint8
 	// segs are the break opportunities: segment i spans
 	// [segs[i].start, segs[i].end); its last `spaces` runes are spaces
 	// that hang at a line end.
@@ -476,7 +484,8 @@ func (t *Text) shapeFallback(s, e int, chain []*Face, p shapeProps, size geom.Un
 
 // segment finds break opportunities: UAX #14 (go-text's segmenter),
 // except between two printable ASCII characters, where Chromium uses its
-// own table (asciiBreak) and a rule for '-' before a digit.
+// own table (asciiBreak) and a rule for '-' before a digit, and after
+// every run of spaces, where Chromium always allows a break.
 func (t *Text) segment() {
 	n := len(t.runes)
 	if n == 0 {
@@ -505,8 +514,13 @@ func (t *Text) segment() {
 		brk[p] = asciiBreak[a-'!'][k/8]&(1<<(k%8)) != 0
 	}
 	for p := 1; p < n; p++ {
-		if t.runes[p-1] == '\n' {
+		switch {
+		case t.runes[p-1] == '\n':
 			brk[p] = true // forced
+		case t.runes[p-1] == ' ' && t.runes[p] != ' ':
+			// Chromium breaks after every run of spaces, also where UAX #14
+			// does not ("a !", "( a"; Blink's break-before-space-run).
+			brk[p] = true
 		}
 	}
 	start := 0
@@ -703,7 +717,7 @@ func (t *Text) Layout(w geom.Unit) *Block {
 			}
 		}
 		ln.FullEnd = ln.End
-		if t.p.Align != style.TextAlignLeft && !last.forced && i < len(t.segs) && ln.End < last.end {
+		if t.p.Align != t.startAlign() && !last.forced && i < len(t.segs) && ln.End < last.end {
 			kerned := ln
 			t.reshapeEnd(&ln)
 			// Without the kerning against the removed space the line can
@@ -728,8 +742,14 @@ func (t *Text) Layout(w geom.Unit) *Block {
 		case style.TextAlignCenter:
 			ln.X = (w - ln.Width) / 2
 		}
-		if ln.X < 0 {
+		if ln.X < 0 || ln.Width > w {
+			// A line wider than the box starts at its start edge: it
+			// overflows to the right in left-to-right text and to the left
+			// in right-to-left text.
 			ln.X = 0
+			if t.p.RTL {
+				ln.X = w - ln.Width
+			}
 		}
 		t.reorder(&ln)
 		b.Lines = append(b.Lines, ln)
@@ -746,9 +766,18 @@ func (t *Text) Layout(w geom.Unit) *Block {
 	return b
 }
 
+// startAlign is the physical alignment of the paragraph's start side.
+func (t *Text) startAlign() style.TextAlign {
+	if t.p.RTL {
+		return style.TextAlignRight
+	}
+	return style.TextAlignLeft
+}
+
 // reshapeEnd emulates Chromium removing the collapsible spaces at the end
-// of a soft-wrapped line with text-align center or right
-// (NGLineBreaker::RemoveTrailingCollapsibleSpace): the part of the line's
+// of a soft-wrapped line not aligned to its start side (center, or right
+// in left-to-right text, left in right-to-left text;
+// NGLineBreaker::RemoveTrailingCollapsibleSpace): the part of the line's
 // last piece before the spaces is shaped again on its own, which drops
 // kerning with the space (e.g. "." or "," followed by a space in Inter).
 func (t *Text) reshapeEnd(ln *Line) {

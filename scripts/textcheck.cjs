@@ -45,19 +45,24 @@ function measure() {
         // In bidi text the pen moves both ways: only "entirely below"
         // starts a line (bidi documents avoid overlapping lines).
         if (!cur || b.top >= cur.bottom || (!bidiDoc && b.left <= cur.lastLeft)) {
-          cur = { top: b.top, bottom: b.bottom, text: '', x0: Infinity, x1: -Infinity, lastLeft: -Infinity };
+          cur = { top: b.top, bottom: b.bottom, text: '', x0: Infinity, x1: -Infinity, lastLeft: -Infinity, chars: [] };
           ls.push(cur);
         }
         cur.lastLeft = b.left;
         cur.top = Math.min(cur.top, b.top);
         cur.bottom = Math.max(cur.bottom, b.bottom);
         cur.text += ch === '\n' ? '' : ch;
+        // Bidi documents: the visual extent of every grapheme (logical
+        // order), to check reordering.
+        if (bidiDoc && !/\s/.test(ch)) cur.chars.push([ch, b.left, b.right]);
         if (!/\s/.test(ch) || ws === 'pre') { cur.x0 = Math.min(cur.x0, b.left); cur.x1 = Math.max(cur.x1, b.right); }
       }
     }
     lines.push(ls.map((l) => {
       const s = pre ? l.text.replace(/ +$/, '') : l.text.replace(/[ \t\n\r\f]+/g, ' ').trim();
-      return [s, l.x0, l.top, l.x1 - l.x0, l.bottom - l.top];
+      const r = [s, l.x0, l.top, l.x1 - l.x0, l.bottom - l.top];
+      if (bidiDoc) r.push(l.chars);
+      return r;
     }));
   }
   return { boxes, lines };

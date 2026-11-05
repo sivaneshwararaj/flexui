@@ -17,6 +17,7 @@ var (
 	emitText   = flag.String("emit-text", "", "write the random text documents to this directory")
 	emitInline = flag.String("emit-inline", "", "write the random inline documents to this directory")
 	emitScript = flag.String("emit-script", "", "write the random multi-script documents to this directory")
+	emitBidi   = flag.String("emit-bidi", "", "write the random bidi documents to this directory")
 )
 
 const randomTextCount = 300
@@ -284,4 +285,91 @@ func randomScriptDoc(i int) (name, src string) {
 	}
 	b.WriteString("</body></html>\n")
 	return fmt.Sprintf("script_%04d", i), b.String()
+}
+
+const randomBidiCount = 150
+
+var bidiWords = []string{
+	"Hello", "world", "text", "flexui", "ok,", "the", "[note]", "(x)", "end.",
+	"שלום", "עולם", "עברית", "טקסט", "(שלום)", "מילה,", "סוף.", "\"ציטוט\"",
+	"مرحبا", "بالعالم", "العربية", "نص", "(كلمة)", "سلام،", "النهاية.",
+	"123", "45.6%", "٧٨٩", "+1-555", "—", "a-b", "x/y", "!",
+}
+
+// randomBidiDoc makes a seeded random document of Latin, Hebrew and
+// Arabic words (numbers, brackets, punctuation) in left-to-right and
+// right-to-left paragraphs, with inline elements, some of them isolates
+// (dir), for the bidi algorithm and line reordering (spec/SUBSET.md
+// §7.6). Lines use line-height: normal so that Chromium's lines can be
+// told apart by position.
+func randomBidiDoc(i int) (name, src string) {
+	r := rand.New(rand.NewPCG(uint64(i), 0xb1d1))
+	var b strings.Builder
+	var inline func(depth int)
+	inline = func(depth int) {
+		n := 1 + r.IntN(4)
+		for k := 0; k < n; k++ {
+			ws := make([]string, 1+r.IntN(5))
+			for j := range ws {
+				ws[j] = bidiWords[r.IntN(len(bidiWords))]
+			}
+			b.WriteString(strings.Join(ws, " ") + []string{" ", "", " "}[r.IntN(3)])
+			switch x := r.IntN(10); {
+			case depth > 0 && x < 4:
+				var css []string
+				if r.IntN(2) == 0 {
+					css = append(css, fmt.Sprintf("font-size: %dpx", 10+r.IntN(12)))
+				}
+				if r.IntN(3) == 0 {
+					css = append(css, "font-weight: 700")
+				}
+				dir := ""
+				if r.IntN(3) == 0 {
+					dir = fmt.Sprintf(` dir="%s"`, []string{"ltr", "rtl", "auto"}[r.IntN(3)])
+				}
+				tag := []string{"span", "b", "a"}[r.IntN(3)]
+				fmt.Fprintf(&b, `<%s style="%s"%s>`, tag, strings.Join(css, "; "), dir)
+				inline(depth - 1)
+				fmt.Fprintf(&b, "</%s>", tag)
+				b.WriteString([]string{" ", "", " "}[r.IntN(3)])
+			case x == 4:
+				b.WriteString("<br>")
+			}
+		}
+	}
+	fmt.Fprintf(&b, "<!-- size: 340x480 -->\n<html><head><style>body { font-size: 14px; padding: 2px; gap: 4px; align-items: flex-start; }</style></head><body>")
+	for p := 1 + r.IntN(3); p > 0; p-- {
+		var css []string
+		if r.IntN(2) == 0 {
+			css = append(css, fmt.Sprintf("width: %dpx", 60+r.IntN(240)))
+		}
+		if r.IntN(3) == 0 {
+			css = append(css, "text-align: "+[]string{"center", "right", "left", "start", "end"}[r.IntN(5)])
+		}
+		dir := ""
+		switch r.IntN(3) {
+		case 0:
+			dir = ` dir="rtl"`
+		case 1:
+			dir = ` dir="ltr"`
+		}
+		fmt.Fprintf(&b, `<div style="%s"%s>`, strings.Join(css, "; "), dir)
+		inline(2)
+		b.WriteString("</div>")
+	}
+	b.WriteString("</body></html>\n")
+	return fmt.Sprintf("bidi_%04d", i), b.String()
+}
+
+func writeRandomBidi(dir string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	for i := 0; i < randomBidiCount; i++ {
+		name, src := randomBidiDoc(i)
+		if err := os.WriteFile(filepath.Join(dir, name+".html"), []byte(src), 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
 }

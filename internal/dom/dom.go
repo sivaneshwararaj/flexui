@@ -10,7 +10,9 @@ package dom
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
+	"github.com/go-text/typesetting/bidi"
 	"golang.org/x/net/html"
 
 	"github.com/sivaneshwararaj/flexui/internal/style"
@@ -168,8 +170,66 @@ func (n *Node) Lang() (string, bool) {
 	return "", false
 }
 
-// Dir implements style.Direr: the element's dir attribute.
-func (n *Node) Dir() string { return n.Attr("dir") }
+// Dir implements style.Direr: the element's dir attribute, with "auto"
+// resolved to "ltr" or "rtl" from its text (HTML's directionality: the
+// first character with a strong direction in its descendant text,
+// skipping elements with their own dir attribute; ltr without one).
+func (n *Node) Dir() string {
+	d := strings.ToLower(strings.TrimSpace(n.Attr("dir")))
+	if d != "auto" {
+		return d
+	}
+	if autoDir(n) == 1 {
+		return "auto-rtl"
+	}
+	return "auto-ltr"
+}
+
+// autoDir returns 1 (rtl), 0 (ltr) or -1 (no strong character) for the
+// text of n.
+func autoDir(n *Node) int {
+	for _, c := range n.Children {
+		switch {
+		case c.Kind == TextNode:
+			for _, r := range c.Text {
+				if d := strongDir(r); d >= 0 {
+					return d
+				}
+			}
+		case c.Kind == ElementNode && c.Attr("dir") == "" && c.TagName != "script" && c.TagName != "style":
+			if d := autoDir(c); d >= 0 {
+				return d
+			}
+		}
+	}
+	return -1
+}
+
+// strongDir returns 0 for a strong left-to-right character (bidi class
+// L), 1 for a strong right-to-left one (R, AL), -1 otherwise. It asks the
+// bidi algorithm about the character alone: in a left-to-right paragraph
+// only R and AL get level 1, in a right-to-left one only L gets level 2.
+func strongDir(r rune) int {
+	if r < 0x80 {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' {
+			return 0
+		}
+		return -1
+	}
+	if unicode.IsNumber(r) {
+		return -1 // digits (EN, AN) are not strong; AN would look like L below
+	}
+	var p bidi.Paragraph
+	rs := p.Segment([]rune{r}, bidi.LeftToRight)
+	if rs.Run(0).Level == 1 {
+		return 1
+	}
+	rs = p.Segment([]rune{r}, bidi.RightToLeft)
+	if rs.Run(0).Level == 2 {
+		return 0
+	}
+	return -1
+}
 
 // Tag implements style.Element.
 func (n *Node) Tag() string { return n.TagName }

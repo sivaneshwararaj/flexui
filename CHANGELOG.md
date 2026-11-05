@@ -6,6 +6,14 @@ versioning with `v0.x` tags until the API settles.
 ## Unreleased
 
 ### Added
+- Bidirectional text: `direction`, the `dir` attribute (`ltr`, `rtl`,
+  `auto`; isolates on inline elements), `text-align: start | end` (start
+  is the new initial value, same as `left` in left-to-right text), UAX #9
+  levels and line reordering, right-to-left flex layout (row axes,
+  column cross axes, absolute and relative positioning), font packs
+  `fonts/arabic` and `fonts/hebrew`. Checked against Chromium: 150
+  random bidi documents glyph by glyph, 400 random right-to-left layout
+  trees (deviations D32, D33).
 - Multi-script text: itemization by script (UAX #24, paired brackets),
   Chromium-style font fallback per cluster, the `lang` attribute as the
   shaping language, and opt-in font packs `fonts/tamil` (Noto Sans
@@ -18,6 +26,8 @@ versioning with `v0.x` tags until the API settles.
   real-clipboard round trip of the same strings.
 
 ### Changed
+- Chromium allows a line break after every run of spaces (also before
+  `!`, `)` ...); flexui now does too.
 - Glyph advances are scaled as Chromium does on Linux (FreeType
   advances, HarfBuzz GPOS scaling, 1/65536 px); for Inter at whole-pixel
   sizes nothing changes.

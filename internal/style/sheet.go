@@ -15,8 +15,9 @@ type Langer interface {
 }
 
 // Direr is implemented by elements that can carry a dir attribute
-// ("ltr" or "rtl"), which sets direction like a presentational hint
-// (author rules override it).
+// ("ltr", "rtl", or "auto" resolved from the element's text as
+// "auto-ltr" / "auto-rtl"), which sets direction like a presentational
+// hint (author rules override it) and makes the element a bidi isolate.
 type Direr interface {
 	Dir() string
 }
@@ -393,10 +394,10 @@ func (c *Cascade) Compute(el Element, parent *Style, inline string) (Style, []Wa
 	}
 	if d, ok := el.(Direr); ok {
 		switch strings.ToLower(strings.TrimSpace(d.Dir())) {
-		case "ltr":
-			s.Direction = DirectionLTR
-		case "rtl":
-			s.Direction = DirectionRTL
+		case "ltr", "auto-ltr": // auto: resolved from the text by the element
+			s.Direction, s.Isolate = DirectionLTR, IsolateLTR
+		case "rtl", "auto-rtl":
+			s.Direction, s.Isolate = DirectionRTL, IsolateRTL
 		}
 	}
 	var matched []*Rule

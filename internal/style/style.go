@@ -50,10 +50,13 @@ type Style struct {
 
 	// Text properties. Color, Font*, LineHeight, TextAlign and WhiteSpace
 	// inherit; TextOverflow does not. Used from M4 on.
-	Color        Color
-	FontFamily   string // raw comma-separated list, case preserved
-	Lang         string // content language: the inherited lang attribute (not a CSS property)
-	Direction    Direction
+	Color      Color
+	FontFamily string // raw comma-separated list, case preserved
+	Lang       string // content language: the inherited lang attribute (not a CSS property)
+	Direction  Direction
+	// Isolate is set by the dir attribute (not inherited): on an inline
+	// element it makes a bidi isolate (unicode-bidi: isolate in browsers).
+	Isolate      Isolate
 	FontSize     geom.Unit
 	FontWeight   int16 // 100..900
 	LineHeight   LineHeight
@@ -106,6 +109,16 @@ func (a TextAlign) Physical(d Direction) TextAlign {
 	}
 	return a
 }
+
+// Isolate is the dir attribute of an element: none, ltr or rtl (auto is
+// resolved to ltr or rtl from the element's text).
+type Isolate uint8
+
+const (
+	IsolateNone Isolate = iota
+	IsolateLTR
+	IsolateRTL
+)
 
 // Direction is the `direction` property (also set by the dir attribute).
 type Direction uint8

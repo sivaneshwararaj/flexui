@@ -31,6 +31,16 @@ var knownTextDiffs = map[string]knownText{
 	// "Hello," (D23) changes where the line breaks.
 	"inline_0115": {"D23 shaping at a soft line end (different break)", 0, true},
 
+	// Seeded random bidi documents (glyph positions compared).
+	"bidi_0032": {"D32 float32 rounding of a text width", 1, false},
+	"bidi_0045": {"D32 float32 rounding of a text width", 1, false},
+	"bidi_0133": {"D33 trailing-space reshaping in a mixed-direction line", 40, false},
+	"bidi_0140": {"D33 trailing-space reshaping in a mixed-direction line", 40, false},
+	"bidi_0117": {"D33 line height of lines with isolates", 128, false},
+	"bidi_0129": {"D33 line height of lines with isolates", 128, false},
+	"bidi_0006": {"D33 different line break (not derived)", 0, true},
+	"bidi_0011": {"D33 different line break (not derived)", 0, true},
+
 	// Seeded random multi-script documents (font fallback, Noto packs).
 	"script_0125": {"D32 float32 rounding of a text width", 1, false},
 
@@ -100,8 +110,13 @@ func readChromeText(t *testing.T, file string) map[string]chromeText {
 }
 
 func TestEmitText(t *testing.T) {
-	if *emitText == "" && *emitInline == "" && *emitScript == "" {
-		t.Skip("no -emit-text / -emit-inline / -emit-script")
+	if *emitText == "" && *emitInline == "" && *emitScript == "" && *emitBidi == "" {
+		t.Skip("no -emit-text / -emit-inline / -emit-script / -emit-bidi")
+	}
+	if *emitBidi != "" {
+		if err := writeRandomBidi(*emitBidi); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if *emitScript != "" {
 		if err := writeRandomScript(*emitScript); err != nil {
@@ -140,6 +155,21 @@ func TestTextChromeScript(t *testing.T) {
 	nb, nl := 0, 0
 	for i := 0; i < randomScriptCount; i++ {
 		name, src := randomScriptDoc(i)
+		t.Run(name, func(t *testing.T) {
+			b, l := compareText(t, name, []byte(src), chrome)
+			nb, nl = nb+b, nl+l
+		})
+	}
+	t.Logf("compared %d boxes and %d lines", nb, nl)
+}
+
+// TestTextChromeBidi compares the seeded random bidi documents, glyph
+// positions included.
+func TestTextChromeBidi(t *testing.T) {
+	chrome := readChromeText(t, "bidi.json")
+	nb, nl := 0, 0
+	for i := 0; i < randomBidiCount; i++ {
+		name, src := randomBidiDoc(i)
 		t.Run(name, func(t *testing.T) {
 			b, l := compareText(t, name, []byte(src), chrome)
 			nb, nl = nb+b, nl+l
@@ -275,11 +305,15 @@ func diffText(src []byte, want chromeText, tol geom.Unit) (errs []string, nBoxes
 				str = strings.TrimRight(str, " ")
 			}
 			top, bot := tx.LineInk(&ln)
-			g := [4]geom.Unit{bx.Abs.X + ln.X, bx.Abs.Y + top, tx.InkWidth(&ln), bot - top}
+			ix0, ix1 := tx.Ink(&ln)
+			g := [4]geom.Unit{bx.Abs.X + ix0, bx.Abs.Y + top, ix1 - ix0, bot - top}
 			c := wl[k]
 			e := [4]geom.Unit{toUnit(c[1].(float64)), toUnit(c[2].(float64)), toUnit(c[3].(float64)), toUnit(c[4].(float64))}
 			if str != c[0] || !nearR(g, e) {
 				errs = append(errs, fmt.Sprintf("box %d line %d:\n   got  %q %s\n   want %q %s", i, k, str, fmtR(g), c[0], fmtR(e)))
+			}
+			if len(c) > 5 && str == c[0] {
+				errs = append(errs, diffChars(tx, &ln, bx.Abs.X, c[5].([]any), tol, fmt.Sprintf("box %d line %d", i, k))...)
 			}
 		}
 	}
@@ -299,4 +333,34 @@ func label(b *Box) string {
 
 func fmtR(r [4]geom.Unit) string {
 	return fmt.Sprintf("[%v %v %v %v]", r[0], r[1], r[2], r[3])
+}
+
+// diffChars compares the visual x extent of every grapheme of a line with
+// Chromium's (bidi documents): chars are [text, left, right] in logical
+// order, white space left out. Both edges may differ by 1/64 px (glyph
+// positions are floored, Chromium's edges are not).
+func diffChars(tx *text.Text, ln *text.Line, x0 geom.Unit, chars []any, tol geom.Unit, where string) []string {
+	var errs []string
+	p := ln.Start
+	for _, ch := range chars {
+		c := ch.([]any)
+		g := []rune(c[0].(string))
+		for p < ln.End && tx.Runes(p, min(p+len(g), ln.End)) != string(g) {
+			p++
+		}
+		if p >= ln.End {
+			return append(errs, fmt.Sprintf("%s: grapheme %q not found", where, string(g)))
+		}
+		sp := tx.Spans(ln, p, p+len(g))
+		l, r := x0+sp[0][0], x0+sp[len(sp)-1][1]
+		for _, x := range sp {
+			l, r = min(l, x0+x[0]), max(r, x0+x[1])
+		}
+		wl, wr := toUnit(c[1].(float64)), toUnit(c[2].(float64))
+		if !near(l, wl, tol+1) || !near(r, wr, tol+1) {
+			errs = append(errs, fmt.Sprintf("%s: %q at [%v %v], Chromium [%v %v]", where, string(g), l, r, wl, wr))
+		}
+		p += len(g)
+	}
+	return errs
 }

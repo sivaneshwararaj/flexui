@@ -1,8 +1,26 @@
 # Status
 
-Last updated after step 5 of the multilingual work (script
-itemization, font fallback, Tamil and Devanagari packs). Next steps:
-bidi (Arabic, Hebrew); cluster-aware editing; IME; CJK.
+Last updated after step 6 of the multilingual work (bidirectional
+text). Next steps: cluster-aware and bidi-aware editing in inputs (step
+7); IME; CJK.
+
+### Bidirectional text (step 6)
+
+* `direction`, `dir` (incl. `auto` and isolates on inline elements),
+  `text-align: start/end`, UAX #9 reordering, right-to-left flex layout,
+  Arabic and Hebrew packs (+288 KB, +38 KB; the bidi code adds ~120 KB
+  to every binary).
+* Verified against Chromium: hand-written bidi documents and 150 random
+  ones with every grapheme's position compared (142 exact; 8 recorded
+  as D32/D33), 400 random right-to-left layout trees (all match except 6
+  that differ the same way without direction: D11, D12, D14).
+* Found on the way: Chromium breaks after every space run (fixed for all
+  text); go-text's bidi Runs merge levels 0 and 2 (worked around by
+  reading its per-character levels); go-text drops the text after a
+  paragraph separator (levels are computed per hard line).
+* Not done: inputs are left to right only (`dir` on `<input>` has no
+  effect on its text yet; step 7); `unicode-bidi`, `<bdi>`, `<bdo>`;
+  vertical text.
 
 ### Multi-script text (step 5)
 

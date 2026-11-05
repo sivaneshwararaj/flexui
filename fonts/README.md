@@ -9,11 +9,14 @@ registers them in a fixed fallback order (independent of import order):
 |---|---|---|---|---|
 | `fonts/tamil` | Noto Sans Tamil | 2.004 | Tamil | +95 KB |
 | `fonts/devanagari` | Noto Sans Devanagari | 2.007 | Devanagari (Hindi, Marathi, Nepali, ...) | +364 KB |
+| `fonts/arabic` | Noto Sans Arabic | 2.013 | Arabic (Arabic, Persian, Urdu, ...), right to left | +288 KB |
+| `fonts/hebrew` | Noto Sans Hebrew | 3.001 | Hebrew, right to left | +38 KB |
 
 Binary sizes were measured on linux/amd64 with Go 1.24 for a program
 calling `flexui.RenderHTML`: 7,442,947 bytes without packs, 7,538,191
-with Tamil, 7,902,565 with Tamil and Devanagari. Fonts are parsed on
-first use, not at startup.
+with Tamil, 7,902,565 with Tamil and Devanagari; after the bidi work
+(step 6) 7,563,563 without packs, 7,851,533 with Arabic, 7,601,669 with
+Hebrew. Fonts are parsed on first use, not at startup.
 
 ```go
 import (

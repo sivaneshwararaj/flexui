@@ -258,7 +258,7 @@ Paint: `background-color`/`background` (a color only), `border`,
 `currentcolor`.
 
 Text: `font-size`, `font-weight` (> 500 is bold), `line-height`,
-`text-align` (`left`, `right`, `center`), `white-space` (`normal`,
+`text-align` (`start` (default), `end`, `left`, `right`, `center`), `direction` (`ltr`, `rtl`), `white-space` (`normal`,
 `nowrap`, `pre`, `pre-wrap`), `text-overflow: ellipsis` (with
 `overflow: hidden` and usually `white-space: nowrap`). `font-family` is
 accepted but every family renders with the bundled Inter.
@@ -271,15 +271,24 @@ itself; order does not matter):
 import (
 	_ "github.com/sivaneshwararaj/flexui/fonts/tamil"      // Noto Sans Tamil, ~95 KB
 	_ "github.com/sivaneshwararaj/flexui/fonts/devanagari" // Noto Sans Devanagari (Hindi, Marathi, Nepali), ~365 KB
+	_ "github.com/sivaneshwararaj/flexui/fonts/arabic"     // Noto Sans Arabic, ~290 KB
+	_ "github.com/sivaneshwararaj/flexui/fonts/hebrew"     // Noto Sans Hebrew, ~40 KB
 )
 ```
 
 Text is split by script and each cluster Inter lacks is drawn with the
 first pack that has it, as Chromium does. Without a pack, such text is
 drawn as boxes (the text itself is kept intact). Put `lang="mr"` etc.
-on an element for language-specific letter forms. Right-to-left
-scripts (Arabic, Hebrew) are not supported yet. See
+on an element for language-specific letter forms. See
 [fonts/README.md](../fonts/README.md).
+
+**Right-to-left text.** Put `dir="rtl"` (or CSS `direction: rtl`) on a
+block, often `<body dir="rtl">`. Text is reordered with the Unicode bidi
+algorithm, `text-align` defaults to the right (`start`), and flex rows
+run right to left. `dir="ltr"`/`"rtl"`/`"auto"` on an inline element
+isolates its text (use it for e-mail addresses, numbers or names of the
+other direction inside a paragraph). Text inputs are still left to right
+(not yet bidi-aware).
 
 Selectors: type, `.class`, `#id`, `*`, compound, descendant (`a b`),
 child (`a > b`), lists (`a, b`), `:hover`, `:focus`, `:active`,

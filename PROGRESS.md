@@ -27,50 +27,40 @@ machine (local Claude Code or a cloud session). Read it first, then
 | 0. Tag `v0.1.0`, CHANGELOG | done (tag exists at ab4d228; push it from a local clone: `git tag -a v0.1.0 ab4d228 -m v0.1.0 && git push origin v0.1.0`, the cloud session cannot push tags) |
 | 1-4. Tamil paste diagnosis | done: clipboard and buffer correct; word movement in Indic text fixed; drawing was the fault (no glyphs) |
 | 5. Itemization, font fallback, Noto Tamil/Devanagari packs | done (commit 43db1cd), matches Chromium |
-| 6. Bidi (UAX #9), `dir`/`direction`, RTL alignment, Arabic/Hebrew packs | **in progress**: text and layout done and checked; docs, random docs, edge cases left (see below) |
-| 7. Cluster-aware caret/selection/backspace, bidi visual movement | not started |
+| 6. Bidi (UAX #9), `dir`/`direction`, RTL alignment, Arabic/Hebrew packs | done (spec/SUBSET.md §7.6; D33 lists the residuals) |
+| 7. Cluster-aware caret/selection/backspace, bidi visual movement | **next** (see below) |
 | 8. IME composition events + caret rect (headless) | not started |
 | 9. IME on macOS (NSTextInputClient) and Windows (IMM32), staged | not started |
 | 10. CJK font pack (opt-in) + UAX #14 for ideographs | not started |
-| `testdata/multilingual` (Tamil, Hindi, mixed done; Arabic, Hebrew, mixed RTL, long paragraphs to add) | partly |
+| `testdata/multilingual` (Tamil, Hindi, mixed, Arabic, Hebrew, bidi mixed done; long paragraphs and CJK to add) | partly |
 | Final summary to the user (changed / unverified / weakest) | at the end |
 
 Waiting on the user: stage 8 (multilingual clipboard) on macOS and
 Windows: `go run ./platform/<darwin|windows>/stages/stage8`.
 
-## Step 6 notes (current)
+## Step 7 notes (next)
 
-Done so far (checkpoint commit "Bidi part 1"):
+* Inputs (`internal/render/input.go`, `internal/view/input.go`,
+  `internal/edit`): the input's text is a one-line `text.Text` with
+  `Params{WhiteSpace: pre}`, no RTL or alignment yet. To do: pass the
+  input's direction (`dir` / `direction`) into its Params (right
+  alignment for rtl), caret x from `Text.X` (bidi aware via `visX`),
+  visual arrow-key movement in mixed text (Left/Right move visually),
+  selection drawn as several rectangles (`Text.Spans`), Backspace
+  deleting one code point inside Indic clusters as browsers do (step 3
+  found the buffer deletes whole clusters), hit testing (`indexAt`) in
+  reordered lines.
+* Verify Backspace behaviour against Chromium first (e.g. in an
+  `<input>` via Playwright: type "नमस्ते", press Backspace, read value).
 
-* `fonts/arabic` (Noto Sans Arabic 2.013), `fonts/hebrew` (Noto Sans
-  Hebrew 3.001), in the Chromium harness and the test imports.
-* Style: `direction: ltr|rtl` (inherited), the `dir` attribute
-  (`ltr`/`rtl`, a presentational hint), `text-align: start|end` (start
-  is the initial value; resolved with `TextAlign.Physical`).
-* `internal/text/bidi.go`: levels per hard line with go-text's bidi
-  (per-character levels read from an unexported field, `runLevels`,
-  guarded by `TestRunLevels`: go-text's `Runs` merge levels 0 and 2);
-  items and pieces split at level changes; RTL items shaped RTL (glyphs
-  stored in logical order); lines reordered (L1, L2) into visual
-  segments `Line.vis`; `X`, `Spans` (inline box fragments) and
-  `Glyphs` use them. All-LTR text keeps the old code paths.
-* Layout: flex axes in RTL containers (`mainRev`, `crossRev` in
-  `internal/layout/flex.go`), over-constrained absolute boxes and
-  relative offsets (right wins in RTL), the space-around/evenly overflow
-  fallback. 400 random `rtl_` layout cases against Chromium: all match
-  except 6 that also differ without direction (D11, D12, D14).
-* Hand-written `testdata/text/docs/bidi_*.html` match Chromium exactly.
+## Step 6 summary (done)
 
-Still to do for step 6:
-
-* Seeded random bidi text documents vs Chromium (like `script_`).
-* Check against Chromium: trailing-space reshaping (`reshapeEnd`) in RTL
-  lines, ellipsis in RTL lines, `dir` on inline elements (browsers make
-  it `unicode-bidi: isolate`; currently ignored for inline elements).
-* `<input>` with `dir="rtl"` (alignment, caret) — or leave to step 7.
-* `testdata/multilingual`: Arabic, Hebrew, mixed RTL pages; review PNGs
-  in `review/step6`; SUBSET.md §7.6 (bidi) and deviations; STATUS,
-  CHANGELOG, GUIDE.
+* `internal/text/bidi.go` (levels, isolates as LRI/RLI/PDI, reordering
+  into `Line.vis`, `Spans`, `Ink`), `dom.Node.Dir` (dir=auto via HTML
+  directionality), `style.Direction`/`Isolate`, layout `mainRev` /
+  `crossRev`. Random bidi documents: `TestTextChromeBidi`
+  (`testdata/text/bidi.json`, per-grapheme positions); random RTL
+  layout: `rtl_` cases in `internal/layout`.
 
 ## How the Chromium comparison works
 

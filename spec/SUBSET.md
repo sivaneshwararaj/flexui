@@ -138,7 +138,8 @@ percentages, the 148 CSS named colors, `transparent`, `currentcolor`;
 | `font-size` | `<len>` in px/rem | `16px` | yes | §7 |
 | `font-weight` | `normal` \| `bold` \| 1..1000 | `400` | yes | §7 |
 | `line-height` | `normal` \| `<number>` \| `<len>` | `normal` | yes | §7 |
-| `text-align` | `left` \| `right` \| `center` | `left` | yes | §7 |
+| `text-align` | `left` \| `right` \| `center` \| `start` \| `end` | `start` | yes | §7; `start`/`end` follow `direction` |
+| `direction` | `ltr` \| `rtl` | `ltr` | yes | §7.6; also set by the `dir` attribute; flips the flex axes (§7.6) |
 | `white-space` | `normal` \| `nowrap` \| `pre` \| `pre-wrap` | `normal` | yes | §7 |
 | `text-overflow` | `clip` \| `ellipsis` | `clip` | no | §7 |
 
@@ -640,7 +641,8 @@ clip. A 1:1 mapping copies source pixels exactly.
   or italics.
 * **Font packs** (opt-in Go packages, `fonts/README.md`) add fallback
   faces: `fonts/tamil` (Noto Sans Tamil), `fonts/devanagari` (Noto Sans
-  Devanagari). Importing one registers it; the fallback chain is Inter,
+  Devanagari), `fonts/arabic` (Noto Sans Arabic), `fonts/hebrew` (Noto
+  Sans Hebrew). Importing one registers it; the fallback chain is Inter,
   then the registered packs in a fixed priority order (Tamil,
   Devanagari, ...), independent of import order. Packs must be
   registered before the first layout (imports do that).
@@ -659,7 +661,7 @@ clip. A 1:1 mapping copies source pixels exactly.
   ligatures, contextual alternates), the item's script, and the content
   language from the inherited `lang` attribute (`en` without one), which
   selects language forms (e.g. Marathi and Nepali letter shapes in
-  Devanagari). Left to right only: bidi is not supported yet.
+  Devanagari). Right-to-left and mixed text: §7.6.
 * Advances are kept in 1/65536 px, scaled as Chromium does on Linux:
   the face's advance as FreeType computes it (x_scale = FT_DivFix(size in
   26.6, unitsPerEm); advance = FT_MulDiv(units, x_scale, 64)), plus GPOS
@@ -709,6 +711,43 @@ clip. A 1:1 mapping copies source pixels exactly.
 | D24 | Text in an element with `text-overflow: ellipsis` and clipping `overflow` ellipsizes (§7.1); in CSS it would not, because the anonymous box does not inherit them. | What authors expect; Chromium comparisons wrap text runs in an equivalent block that takes these properties. |
 | D30 | `em` and `i` are not italic, and `font-style` is not supported: only upright Regular and Bold faces are bundled. | Binary size; add an italic face later. |
 | D32 | Float rounding of text widths: Chromium adds glyph advances as float32 (per shaping run, then per item) before rounding a piece up to 1/64 px. When the exact width is within float32 precision (a few 1/65536 px) above a 1/64 px boundary, Chromium's width is 1/64 px smaller. Only fonts whose scaled advances are not exact in float32 are affected (the Noto packs, units per em 1000); Inter at whole-pixel sizes is exact. Seen in 1 of 150 random multi-script documents. | Emulating float32 summation in Chromium's run order costs more than a 1/64 px difference is worth. |
+| D33 | Bidi residuals not derived: in 8 of 150 random bidi documents, 2 differ by 1/64 px (D32), 2 by about 0.4 px in a line ending in kerned punctuation before a space (the trailing-space reshaping of §7.2 in mixed-direction lines: the same set-up keeps the kerning in one document and drops it in another), 2 have a line 1-2 px taller in Chromium (lines with isolates), and 2 break a line at a different place. | The remaining cases did not reduce to a rule after several attempts; all other bidi documents match glyph for glyph. |
+
+### 7.6 Bidirectional text
+
+* **Direction**: the `direction` property (inherited) and the `dir`
+  attribute (`ltr`, `rtl`, `auto`; a presentational hint, overridden by
+  author CSS). `dir="auto"` is resolved as HTML does: the first strong
+  character in the element's text (skipping descendants with their own
+  `dir`, and digits), `ltr` without one. A block's direction is the base
+  direction of its paragraphs and resolves `text-align: start/end`.
+* **Isolates**: an inline element with a `dir` attribute is a bidi
+  isolate (browsers: `unicode-bidi: isolate`), as if its text were
+  wrapped in LRI or RLI ... PDI. `direction` without `dir` on an inline
+  element has no effect on reordering (`unicode-bidi: normal`), as in
+  browsers. `unicode-bidi`, `<bdi>` and `<bdo>` are not supported.
+* **Algorithm**: UAX #9 (go-text's implementation) per hard line (a
+  forced break separates paragraphs), with the block's direction as the
+  paragraph direction. Items and width pieces are split at level
+  changes; odd levels are shaped right to left. Each line is reordered
+  with rules L1 (trailing white space at the paragraph level) and L2;
+  isolate controls take part as zero-width separators, as in Chromium.
+* **Lines**: alignment as in §7.2 with `start` on the right in
+  right-to-left paragraphs; a line wider than its box overflows on the
+  end side (to the left in right-to-left text). The trailing-space
+  reshaping of §7.2 applies to lines not aligned to their start side.
+  The ellipsis (D24) is drawn at the end side.
+* **Flex layout** in a right-to-left container: a row's main axis runs
+  right to left (`row-reverse` left to right); a column's cross axis
+  starts at the right (`align-items: flex-start` is the right edge;
+  `wrap-reverse` flips it back). The overflow fallback of
+  `justify-content: space-around/evenly` is the writing-mode start (the
+  right). Absolutely positioned boxes with `left`, `right` and `width`
+  ignore `left`; relative positioning with both `left` and `right` uses
+  `right` (CSS 2 §9.4.3, §10.3.7).
+* Verified against Chromium: hand-written documents and 150 seeded random
+  bidi documents (every grapheme's visual position compared), 400 random
+  right-to-left flex layout trees. Exceptions: D32, D33.
 
 ## 8. Interaction (M5, M6)
 

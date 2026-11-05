@@ -33,9 +33,27 @@ func (t *Text) levels() {
 			b++
 		}
 		if b > a {
-			rs := p.Segment(t.runes[a:b], base)
-			for k, l := range runLevels(&rs) {
-				t.lvl[a+k] = uint8(l)
+			in, at := t.withIsolates(a, b)
+			rs := p.Segment(in, base)
+			lv := runLevels(&rs)
+			for k := a; k < b; k++ {
+				t.lvl[k] = uint8(lv[at[k-a]])
+			}
+			// The isolate controls stay in the reordering as zero-width
+			// separators with their levels (as in Chromium's text).
+			prev := 0
+			for k := a; k <= b; k++ {
+				end := len(in)
+				if k < b {
+					end = at[k-a]
+				}
+				for j := prev; j < end; j++ {
+					if t.ctl == nil {
+						t.ctl = map[int][]uint8{}
+					}
+					t.ctl[k] = append(t.ctl[k], uint8(lv[j]))
+				}
+				prev = end + 1
 			}
 		}
 		if b < len(t.runes) {
@@ -49,6 +67,48 @@ func (t *Text) levels() {
 			break
 		}
 	}
+}
+
+// isoChain returns the isolates (outermost first) that rune i is in.
+func (t *Text) isoChain(i int) []Style {
+	r := &t.runs[t.run[i]]
+	var c []Style
+	for _, o := range r.Outer {
+		if o.IsoID > 0 {
+			c = append(c, o)
+		}
+	}
+	if r.Style.IsoID > 0 {
+		c = append(c, r.Style)
+	}
+	return c
+}
+
+// withIsolates returns runes [a, b) with isolate controls (LRI, RLI or
+// FSI ... PDI) around the text of inline elements with a dir attribute,
+// and the index in it of every rune.
+func (t *Text) withIsolates(a, b int) ([]rune, []int) {
+	at := make([]int, b-a)
+	var in []rune
+	var open []Style
+	for i := a; i < b; i++ {
+		c := t.isoChain(i)
+		k := 0
+		for k < len(open) && k < len(c) && open[k].IsoID == c[k].IsoID {
+			k++
+		}
+		for len(open) > k {
+			in = append(in, '\u2069') // PDI
+			open = open[:len(open)-1]
+		}
+		for _, s := range c[k:] {
+			in = append(in, [...]rune{0, '\u2066', '\u2067', '\u2068'}[s.IsoDir]) // LRI, RLI, FSI
+			open = append(open, s)
+		}
+		at[i-a] = len(in)
+		in = append(in, t.runes[i])
+	}
+	return in, at
 }
 
 // runLevels returns the resolved level of every character. go-text's
@@ -90,8 +150,14 @@ func (t *Text) reorder(ln *Line) {
 	var segs []vseg
 	var lvls []uint8
 	for i := ln.Start; i < ln.End; {
+		for _, cl := range t.ctl[i] {
+			if i > ln.Start {
+				segs = append(segs, vseg{s: i, e: i, rtl: cl%2 == 1})
+				lvls = append(lvls, cl)
+			}
+		}
 		j := i + 1
-		for j < ln.End && j < t.pend[i] && lv[j-ln.Start] == lv[i-ln.Start] {
+		for j < ln.End && j < t.pend[i] && lv[j-ln.Start] == lv[i-ln.Start] && len(t.ctl[j]) == 0 {
 			j++
 		}
 		w := t.toUnits(t.pos[j] - t.pos[i])
@@ -234,4 +300,29 @@ func (t *Text) visualGlyphs(ln *Line, out []PlacedGlyph) []PlacedGlyph {
 		}
 	}
 	return out
+}
+
+// Ink returns the horizontal extent of the line's characters other than
+// white space, relative to the content box: in visual order, so white
+// space that ends up at either edge of a reordered line is left out.
+func (t *Text) Ink(ln *Line) (x0, x1 geom.Unit) {
+	if ln.vis == nil {
+		return ln.X, ln.X + t.InkWidth(ln)
+	}
+	first := true
+	for i := ln.Start; i < ln.End; i++ {
+		if t.runes[i] == ' ' || t.runes[i] == '\t' {
+			continue
+		}
+		for _, sp := range t.Spans(ln, i, i+1) {
+			if first || sp[0] < x0 {
+				x0 = sp[0]
+			}
+			if first || sp[1] > x1 {
+				x1 = sp[1]
+			}
+			first = false
+		}
+	}
+	return x0, x1
 }

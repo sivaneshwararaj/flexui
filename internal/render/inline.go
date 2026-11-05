@@ -81,11 +81,12 @@ func (d *Document) inlineBox(c *style.Cascade, group []*dom.Node, parent *style.
 	b := &Box{Style: st}
 	var runs []text.Run
 	var outer []text.Style // styles of the enclosing inline boxes
-	var collect func(nodes []*dom.Node, owner *Box, ost *style.Style)
-	collect = func(nodes []*dom.Node, owner *Box, ost *style.Style) {
+	isoID := 0             // isolates (inline elements with dir) in this paragraph
+	var collect func(nodes []*dom.Node, owner *Box, ost *style.Style, ots text.Style)
+	collect = func(nodes []*dom.Node, owner *Box, ost *style.Style, ots text.Style) {
 		for _, n := range nodes {
 			if n.Kind == dom.TextNode {
-				runs = append(runs, text.Run{Text: n.Text, Style: textStyle(ost), Outer: outerOf(outer, owner != nil)})
+				runs = append(runs, text.Run{Text: n.Text, Style: ots, Outer: outerOf(outer, owner != nil)})
 				b.runOwner = append(b.runOwner, owner)
 				continue
 			}
@@ -98,13 +99,18 @@ func (d *Document) inlineBox(c *style.Cascade, group []*dom.Node, parent *style.
 			d.checkInline(ib)
 			b.inlines = append(b.inlines, ib)
 			if n.Tag() == "br" {
-				runs = append(runs, text.Run{Break: true, Style: textStyle(est), Outer: outerOf(append(outer, textStyle(ost)), owner != nil)})
+				runs = append(runs, text.Run{Break: true, Style: textStyle(est), Outer: outerOf(append(outer, ots), owner != nil)})
 				b.runOwner = append(b.runOwner, ib)
 			} else {
 				if owner != nil {
-					outer = append(outer, textStyle(ost))
+					outer = append(outer, ots)
 				}
-				collect(n.Children, ib, &ib.Style)
+				ets := textStyle(&ib.Style)
+				if ib.Style.Isolate != style.IsolateNone {
+					isoID++
+					ets.IsoID, ets.IsoDir = isoID, uint8(ib.Style.Isolate)
+				}
+				collect(n.Children, ib, &ib.Style, ets)
 				if owner != nil {
 					outer = outer[:len(outer)-1]
 				}
@@ -112,7 +118,7 @@ func (d *Document) inlineBox(c *style.Cascade, group []*dom.Node, parent *style.
 			ib.last = len(runs)
 		}
 	}
-	collect(group, nil, &b.Style)
+	collect(group, nil, &b.Style, textStyle(&b.Style))
 	p := text.Params{
 		Style:      textStyle(&st),
 		WhiteSpace: st.WhiteSpace, Align: st.TextAlign.Physical(st.Direction),
@@ -267,6 +273,9 @@ func textKey(runs []text.Run, p text.Params) string {
 		k.WriteString(strconv.FormatInt(int64(s.LineHeight.V), 10))
 		k.WriteByte(',')
 		k.WriteString(strconv.Quote(s.Lang))
+		if s.IsoID > 0 {
+			k.WriteString("," + strconv.Itoa(s.IsoID) + "," + strconv.Itoa(int(s.IsoDir)))
+		}
 	}
 	st(p.Style)
 	k.WriteString("|" + strconv.Itoa(int(p.WhiteSpace)) + strconv.Itoa(int(p.Align)) + strconv.FormatBool(p.Ellipsis) + strconv.FormatBool(p.RTL))
