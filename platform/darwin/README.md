@@ -67,7 +67,7 @@ something fails.
 | 6 | `go run ./platform/darwin/stages/stage6` | Typing into inputs, caret and selection keys (Option = word, Command = line), Cmd+A/C/X/V with the system clipboard, `RESULT: change` when leaving a field. |
 | 7 | `go run ./platform/darwin/stages/stage7` | The public entry point `darwin.Run(app)` with a complete small app. |
 | 8 | `go run ./platform/darwin/stages/stage8` | Multilingual clipboard: 13 strings (Tamil, Hindi, Arabic, Hebrew, mixed, combining marks, emoji, joiners) written to and read back from the system clipboard, byte-identical (UTF-8 via `NSString` (`public.utf8-plain-text`)); the Tamil sample left on the clipboard pastes intact into TextEdit; text copied in another app and pasted into the field is printed as code points. Missing Tamil glyphs in the window are expected until the font work lands. |
-| 9 (no keyboard) | `go run ./platform/darwin/stages/stage9 -auto` | Sends the NSTextInputClient messages an input method sends (setMarkedText, markedRange, selectedRange, firstRectForCharacterRange, insertText, unmarkText) to the view through objc_msgSend and prints a RESULT line per check, ending with `self-test passed`. Exercises the assembly methods without switching keyboards; does not exercise AppKit's own input method or the candidate window. |
+| 9 (no keyboard) | `go run ./platform/darwin/stages/stage9 -auto` | Sends the NSTextInputClient messages an input method sends (setMarkedText, markedRange, selectedRange, firstRectForCharacterRange, insertText, unmarkText) to the view through objc_msgSend and prints a RESULT line per check, ending with `self-test passed`. Exercises the assembly methods without switching keyboards; does not exercise AppKit's own input method or the candidate window. **Passed on arm64 (macOS 27.2, 2026-11-05)**: all checks ok (compose かん, markedRange {0 2}, selectedRange {2 0}, firstRectForCharacterRange inside the window, actualRange written, commit 漢字, markedRange NSNotFound after commit, cancel, unmarkText commit), ending `self-test passed`. |
 | 9 | `go run ./platform/darwin/stages/stage9` | IME composition through NSTextInputClient (`ime_darwin.go`): typing goes through `interpretKeyEvents:`; `setMarkedText:selectedRange:replacementRange:` → `EventCompose`, `insertText:replacementRange:` → commit (or plain text), `unmarkText` → commit; `markedRange`, `selectedRange` and `firstRectForCharacterRange:actualRange:` return structs, which purego callbacks cannot, so they are Go assembly (`ime_darwin_arm64.s`, `ime_darwin_amd64.s`) returning values the Go side keeps updated. RESULT lines for every compose/commit/cancel and input event, plus the caret rectangle. |
 
 Runnable examples: `cd examples && go run ./counter -window`, and the demo
@@ -84,13 +84,18 @@ go test ./...
 
 ## Untested parts and specific risks
 
-### Stage 9 (IME) risks, all untested
+### Stage 9 (IME) risks
 
-* The assembly method implementations: register use and struct-return
-  conventions (arm64: X0/X1 and F0-F3; x86_64: AX/DX and a hidden result
-  pointer in DI for NSRect) are written from the ABI documents, not run.
-  A mistake here crashes the process when the input method asks for the
-  marked range or the caret rectangle.
+`stage9 -auto` passed on arm64 (2026-11-05): the arm64 assembly methods
+return correct structs and the marked-text/commit/cancel paths work when
+the NSTextInputClient messages are sent directly. Still untested: typing
+with a real input method (AppKit's input context, candidate window
+placement) and everything on x86_64.
+
+* The x86_64 assembly (AX/DX and a hidden result pointer in DI for
+  NSRect) is written from the ABI documents and has not run. A mistake
+  there crashes the process when the input method asks for the marked
+  range or the caret rectangle.
 * `objc.GetProtocol("NSTextInputClient")` may return nil (then the view
   does not declare the protocol and AppKit may not create an input
   context; `-debug` logs it).

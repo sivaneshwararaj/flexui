@@ -58,12 +58,18 @@ done
 echo "ok   dependency rules"
 
 # Determinism: the golden documents render to the recorded hashes on a
-# different architecture (32-bit) too. (On macOS/Windows, run TestHashes
-# there.)
-if GOARCH=386 CGO_ENABLED=0 go test -count=1 ./internal/render -run '^TestHashes$' >/dev/null; then
-	echo "ok   render hashes on linux/386"
+# different architecture (32-bit) too. GOARCH=386 only runs on a Linux
+# (or Windows) host; elsewhere (macOS has no 386) run TestHashes natively.
+hostos=$(go env GOHOSTOS)
+if [ "$hostos" = linux ]; then
+	harch=386
 else
-	echo "FAIL render hashes differ on linux/386"
+	harch=$(go env GOHOSTARCH)
+fi
+if GOARCH=$harch CGO_ENABLED=0 go test -count=1 ./internal/render -run '^TestHashes$' >/dev/null; then
+	echo "ok   render hashes on $hostos/$harch"
+else
+	echo "FAIL render hashes differ on $hostos/$harch"
 	status=1
 fi
 exit $status

@@ -21,12 +21,15 @@ stage 6 again on macOS.
 * macOS run by the user: stage 6 (Tamil typing) and stage 8 (13/13
   clipboard strings, paste from other apps) pass; stage 9 showed correct
   Japanese and right-to-left Arabic text in the fields but no composition
-  events yet (text arrived committed), so the marked-text path and the
-  assembly methods are still unverified.
+  events yet (text arrived committed), so AppKit's input-method path is
+  still unverified. `stage9 -auto` (sends the NSTextInputClient messages
+  itself) passed on arm64 (2026-11-05): arm64 assembly struct returns,
+  marked text, commit, cancel and unmarkText all ok. Not yet run: typing
+  with the Japanese input method (candidate window position) and x86_64.
 * Windows: IMM32 messages, composition window hidden, candidate window
   at the caret. macOS: NSTextInputClient with three methods in Go
-  assembly (struct returns). Both compile for all targets; **neither has
-  run**. Stage 9 (`go run ./platform/<darwin|windows>/stages/stage9`)
+  assembly (struct returns). Both compile for all targets; Windows **has not
+  run**; macOS arm64 passed the `-auto` self-test only. Stage 9 (`go run ./platform/<darwin|windows>/stages/stage9`)
   prints RESULT lines; the READMEs list what is untested and the risks.
 * macOS typing now goes through `interpretKeyEvents:` (also for plain
   text): stage 6 re-run by the user, typing (Tamil keyboard) works; the
@@ -331,6 +334,15 @@ stage 6 again on macOS.
 
 ## Known limitations / bugs
 
+* **Determinism depends on the Go version for JPEG images.** `TestHashes`
+  passes on darwin/arm64 with Go 1.24.0 (the `go.mod` version CI uses),
+  but with Go 1.27.1 the `images` document differs: 127 pixels, by 1-2
+  levels, all inside the JPEG images. The standard library's
+  `image/jpeg` IDCT was rewritten (`dct.go` replaces `idct.go`), so the
+  decoded pixels change with the toolchain, not with the architecture.
+  PNG, text and shapes are unaffected. Fix options: a JPEG decoder in
+  the repo, or pinning the toolchain (`toolchain` line in go.mod).
+  Until then, run `make check` with `GOTOOLCHAIN=go1.24.0` on a newer Go.
 * Layout deviations D11-D14 (`spec/SUBSET.md` §4): absolute boxes with
   both vertical insets that overflow, intrinsic sizes of wrapping
   containers with explicit `flex-basis`, some nested cyclic percentages,

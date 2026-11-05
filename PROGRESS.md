@@ -30,7 +30,7 @@ machine (local Claude Code or a cloud session). Read it first, then
 | 6. Bidi (UAX #9), `dir`/`direction`, RTL alignment, Arabic/Hebrew packs | done (spec/SUBSET.md §7.6; D33 lists the residuals) |
 | 7. Cluster-aware caret/selection/backspace, bidi movement | done (logical movement as Chromium; see spec/STATUS.md) |
 | 8. IME composition events + caret rect (headless) | done (spec/SUBSET.md §8.7) |
-| 9. IME on macOS (NSTextInputClient) and Windows (IMM32), staged | done, compile-checked only; user to run stage 9 on both OSes (and stage 6 again on macOS) |
+| 9. IME on macOS (NSTextInputClient) and Windows (IMM32), staged | done; macOS arm64 `stage9 -auto` passed (2026-11-05); still to run: macOS stage 9 typing with the Japanese input method, macOS x86_64, Windows stage 9 |
 | 10. CJK font pack (opt-in) + UAX #14 for ideographs | done (fonts/cjk; D34 for punctuation trimming) |
 | `testdata/multilingual` (Tamil, Hindi, mixed, Arabic, Hebrew, bidi, CJK, long paragraphs, inputs, IME) | done |
 | Final summary to the user (changed / unverified / weakest) | done (in the session; also spec/STATUS.md) |
@@ -38,7 +38,10 @@ machine (local Claude Code or a cloud session). Read it first, then
 macOS results (user): stage 6 with font packs and stage 8 pass; stage 9
 partial (no `compose` RESULT lines yet: type with the Japanese input
 method, not paste). `stage9 -auto` checks the IME methods without a
-keyboard (sends the input-method messages itself). Windows stages 8 and 9 not run.
+keyboard (sends the input-method messages itself); it passed on arm64
+(2026-11-05, local Claude Code session: every check ok, `self-test
+passed`). The interactive run was not done: that session had no
+Accessibility permission, so it could not send keystrokes. Windows stages 8 and 9 not run.
 
 Waiting on the user (run on each OS, send the RESULT lines):
 `go run ./platform/<darwin|windows>/stages/stage8` (multilingual
@@ -47,6 +50,10 @@ typing works (font packs were missing in the stage; fixed).
 
 ## Possible next work (not requested yet)
 
+* Determinism hole found on the Mac (2026-11-05): with Go 1.25+ the
+  stdlib JPEG decoder gives different pixels, so `TestHashes` fails on
+  `images` (passes with Go 1.24.0 on darwin/arm64). See spec/STATUS.md
+  Known bugs. Needs a decision: own JPEG decoder or pinned toolchain.
 * D34: Blink's HanKerning (text-spacing-trim) with the `halt` feature.
 * Korean pack (Noto Sans KR subset), CJK bold, Japanese forms (JP subset).
 * `RenderHTML` does not draw `<input>` values (only apps do).
