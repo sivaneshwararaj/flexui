@@ -11,8 +11,10 @@ and compile-checked there for `windows/amd64` and `windows/arm64` with
 | 3 | Pass: `presented 420x260 @1.25x ... identical: true` (presented frame byte-identical to headless); card, bold and link runs sharp at 125%. |
 | 4 | Pass: boxes re-wrap on resize, size text updates; RESULT lines report e.g. `535x320 logical @1.25x = 669x400 pixels`. Moving to a monitor with another scale not reported. |
 | 5 | Pass: hover, `Inc` clicks, list wheel scrolling with scrollbar, item selection (`picked item 3`, `5`). |
-| 6 | Partial: typing, caret and `RESULT: change` lines work. **Ctrl+C did not copy.** Paste from other apps not reported. The stage now prints a `RESULT: clipboard write/read ...` line with the error for every copy and paste, and `OpenClipboard` is retried for ~100 ms; to be re-run. |
-| 7 | Not run yet. |
+| 6 | Pass (second run): typing, caret keys, selection, `RESULT: change` lines; Ctrl+C prints `clipboard write "...", error <nil>` and pastes into Notepad; Ctrl+V pastes text copied in Notepad. The first run's failed copy was not reproduced; the likely cause, another process briefly holding the clipboard (e.g. clipboard history), is now handled by retrying `OpenClipboard` for ~100 ms (unconfirmed). |
+| 7 | Pass: the counter app via `windows.Run`; +/- change the count, the red note appears after 3 clicks, the window closes normally. The full demo (`cd examples && go run ./demo -window`) also runs: list with scrollbar, selection, form. |
+| 8 | Not run yet (multilingual clipboard round trip). |
+| 9 | Not run yet (IME composition). |
 
 Everything else (stages 3-7: flexui frames, resizing, DPI changes,
 input, text, clipboard, closing) is still untested.
@@ -64,6 +66,8 @@ no C compiler needed):
 | 5 | `go run ./platform/windows/stages/stage5` | Hover, clicks (`RESULT: Inc ...`), wheel and scrollbar-thumb scrolling, item selection, Tab focus, Enter/Space. |
 | 6 | `go run ./platform/windows/stages/stage6` | Typing, caret keys (Ctrl = word, Home/End = line), Shift selection, Ctrl+A/C/X/V with the Windows clipboard, an emoji typed with Win+. inserts as one character, `RESULT: change` when leaving a field. |
 | 7 | `go run ./platform/windows/stages/stage7` | `windows.Run(app)` with a complete app; closing returns normally. |
+| 8 | `go run ./platform/windows/stages/stage8` | Multilingual clipboard: 13 strings (Tamil, Hindi, Arabic, Hebrew, mixed, combining marks, emoji, joiners) written to and read back from the system clipboard, byte-identical (UTF-16 with surrogate pairs and a terminating NUL (`CF_UNICODETEXT`, read bounded by `GlobalSize`)); the Tamil sample left on the clipboard pastes intact into Notepad; text copied in another app and pasted into the field is printed as code points. Missing Tamil glyphs in the window are expected until the font work lands. |
+| 9 | `go run ./platform/windows/stages/stage9` | IME composition through IMM32 (`ime_windows.go`): `WM_IME_COMPOSITION` (GCS_COMPSTR + GCS_CURSORPOS as `EventCompose`, GCS_RESULTSTR as `EventComposeCommit`), `WM_IME_ENDCOMPOSITION` without a result as `EventComposeCancel`; the IME's own composition window hidden (`WM_IME_SETCONTEXT` without ISC_SHOWUICOMPOSITIONWINDOW); candidate window placed with `ImmSetCandidateWindow` (CFS_EXCLUDE) at `App.CaretRect` in physical pixels. RESULT lines for every compose/commit/cancel and input event, plus the caret rectangle. |
 
 Each stage prints `EXPECT:` and `RESULT:` lines; add `-debug` to log every
 Win32 step, message and frame (with timings) to stderr, and include that
@@ -77,32 +81,44 @@ into `review/windows`).
 
 ## Untested parts and specific risks
 
-Stages 1-5 confirm the Win32 bindings, window creation, presentation,
-DPI sizing at 125%, resizing, pointer, wheel and keyboard input; stage 6
-confirms text input. Ctrl+C (clipboard write) failed in the first run and
-is being diagnosed. Still unverified, with the risks noted before running:
+### Stage 9 (IME) risks, all untested
 
-* In particular:
-  * The hand-written structure layouts (`WNDCLASSEXW`, `MSG`,
-    `PAINTSTRUCT`, `BITMAPINFOHEADER`, `TRACKMOUSEEVENT`) and
-    `DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2` as the handle value -4.
-  * The window procedure as a `windows.NewCallback` and messages arriving
-    during `CreateWindowExW` (they go to `DefWindowProcW` until the window
-    handle is known).
-  * `SetDIBitsToDevice` with a negative height (top-down) and the BGRA
-    conversion (stage 2 checks both).
-  * Client size and DPI: logical size = client pixels / scale, rounded;
-    at fractional scales the frame can be one device pixel smaller than
-    the client area (the rest is not painted).
-  * `WM_DPICHANGED` handling (the suggested rectangle), and
-    `SetProcessDpiAwarenessContext` failing on older Windows (logged; the
-    window would then be scaled by Windows).
-  * Wheel sign and step, high-resolution touchpad wheels (deltas smaller
-    than 120 are passed through proportionally).
-  * Key mapping on non-US layouts (letters use virtual-key codes for
-    shortcuts; text comes from `WM_CHAR`), AltGr (reported as Ctrl+Alt by
-    Windows; text should still arrive through `WM_CHAR`).
-  * Clipboard ownership and `GlobalFree` on failure.
+* The structure layouts of COMPOSITIONFORM and CANDIDATEFORM (28 and 32
+  bytes), and IME messages arriving while focus is outside an input.
+* `WM_IME_COMPOSITION` is not passed to DefWindowProc (so no WM_CHAR
+  duplicates the result string): IMEs that rely on the default handling
+  may misbehave.
+* Cursor position (GCS_CURSORPOS) only; clause attributes (GCS_COMPATTR)
+  are ignored, so there are no thick/thin clause underlines.
+* TSF-only input methods (some newer ones) should still send IMM32
+  messages through the compatibility layer.
+
+Stages 1-7 pass on Windows build 26300 at 125% scaling, and the demo
+runs. This verifies:
+
+* the Win32 bindings and structure layouts;
+* window creation and the window procedure;
+* top-down `SetDIBitsToDevice` with BGRA (byte-identical to headless);
+* per-monitor DPI sizing;
+* resizing, pointer and wheel input, Tab focus, typing and caret keys;
+* the clipboard in both directions. The first run's failed copy was not
+  reproduced; an `OpenClipboard` retry was added for it.
+
+Still unverified:
+
+* `WM_DPICHANGED`: moving to a monitor with another scale, or changing
+  the scale while running. Other scales (100%, 150%, 200%) and the
+  one-device-pixel gap at fractional scales.
+* `SetProcessDpiAwarenessContext` on older Windows (Windows 10 before
+  1703: logged, and Windows would then scale the window).
+* High-resolution touchpad wheel deltas (smaller than 120), and the
+  wheel step relative to other apps.
+* Non-US keyboard layouts and AltGr (reported as Ctrl+Alt; text should
+  still arrive through `WM_CHAR`), and emoji entered via Win+. (not
+  reported).
+* Clipboard: `GlobalFree` on failure paths; whether the retry is what
+  fixed the first failed copy.
+* Windows on ARM (builds, not run).
 * **Not implemented**: IME composition (`WM_IME_*`; input methods may
   still commit text through `WM_CHAR`, which is untested), caret blinking,
   cursor shapes (always the arrow), menus, multiple windows, full screen,

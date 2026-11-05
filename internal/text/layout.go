@@ -1,6 +1,7 @@
 package text
 
 import (
+	"github.com/go-text/typesetting/language"
 	"github.com/go-text/typesetting/segmenter"
 
 	"github.com/sivaneshwararaj/flexui/internal/geom"
@@ -12,6 +13,14 @@ type Style struct {
 	Weight     int
 	Size       geom.Unit // font size
 	LineHeight style.LineHeight
+	// Lang is the content language (the inherited lang attribute, BCP 47;
+	// "" for none). It selects language-specific glyph forms.
+	Lang string
+	// IsoID (> 0) marks the inline element whose text this is as a bidi
+	// isolate (the dir attribute) of direction IsoDir (1 ltr, 2 rtl, 3
+	// auto); IDs tell elements apart within a paragraph.
+	IsoID  int
+	IsoDir uint8
 }
 
 // Params are the properties of a paragraph: the style of the block that
@@ -22,6 +31,7 @@ type Params struct {
 	WhiteSpace style.WhiteSpace
 	Align      style.TextAlign
 	Ellipsis   bool // text-overflow: ellipsis applies (the box clips)
+	RTL        bool // the paragraph's base direction is right to left
 }
 
 // Run is a piece of a paragraph with one style: the text of a text node
@@ -54,11 +64,24 @@ type Text struct {
 	// start of its hard line (tabs resolved there); len(pos) = len(runes)+1.
 	pos []int64
 	// Pieces (Chromium's inline items): maximal ranges of runes of one
-	// run, split at tabs and forced breaks. pstart[i] and pend[i] bound
+	// run and one bidi level, split at tabs and forced breaks (not at
+	// script changes: those split shaping, not the rounding of widths). pstart[i] and pend[i] bound
 	// the piece of rune i. Widths are rounded per piece.
 	pstart, pend []int
 	// glyphs in logical order; Glyph.Cluster indexes runes.
 	glyphs []Glyph
+	// scr is the resolved script of each rune (UAX #24, common and
+	// inherited characters take the script of their run); face is the
+	// face its cluster was shaped with.
+	scr  []language.Script
+	face []*Face
+	// lvl is the bidi embedding level of each rune; bidi is set when the
+	// text has right-to-left (or mixed) levels.
+	lvl  []uint8
+	bidi bool
+	// ctl holds the levels of the bidi isolate controls before rune i
+	// (they are not in runes; reordering keeps them as separators).
+	ctl map[int][]uint8
 	// segs are the break opportunities: segment i spans
 	// [segs[i].start, segs[i].end); its last `spaces` runes are spaces
 	// that hang at a line end.
@@ -75,7 +98,9 @@ type Text struct {
 
 type runInfo struct {
 	outer      []runInfo
-	face       *Face
+	face       *Face   // primary face
+	chain      []*Face // fallback chain, starting with face
+	lang       language.Language
 	size       geom.Unit
 	ascent     geom.Unit // rounded, as used for the baseline
 	descent    geom.Unit
@@ -117,6 +142,12 @@ type Line struct {
 	// the end before truncation (the hidden content still has positions).
 	Ellipsis bool
 	FullEnd  int
+	// endAdj corrects the width of [Start, End) when the line's last piece
+	// was shaped again without the trailing spaces it was shaped with (see
+	// reshapeEnd); it applies to positions at End.
+	endAdj geom.Unit
+	// vis is the visual order of the line (bidi text only, see reorder).
+	vis []vseg
 }
 
 // New prepares the single-style paragraph s.
@@ -129,7 +160,7 @@ func New(s string, p Params) *Text {
 func NewRuns(runs []Run, p Params) *Text {
 	t := &Text{p: p, runs: runs}
 	t.strut = info(p.Style)
-	t.upem = int64(t.strut.face.Upem)
+	t.upem = 1 << 16 / geom.UnitsPerPx // fine units are 1/65536 px
 	for _, r := range runs {
 		ri := info(r.Style)
 		for _, o := range r.Outer {
@@ -138,6 +169,7 @@ func NewRuns(runs []Run, p Params) *Text {
 		t.rs = append(t.rs, ri)
 	}
 	t.processWhiteSpace()
+	t.levels()
 	t.shape()
 	t.positions()
 	t.pieces()
@@ -172,6 +204,17 @@ func wraps(ws style.WhiteSpace) bool {
 
 func info(s Style) runInfo {
 	f := ForWeight(s.Weight)
+	r := faceInfo(f, s)
+	r.chain = Chain(s.Weight)
+	r.lang = language.NewLanguage("en")
+	if s.Lang != "" {
+		r.lang = language.NewLanguage(s.Lang)
+	}
+	return r
+}
+
+// faceInfo returns the metrics of face f in style s.
+func faceInfo(f *Face, s Style) runInfo {
 	r := runInfo{face: f, size: s.Size}
 	round := func(fu int32) geom.Unit {
 		num := int64(fu) * int64(s.Size) // 1/64 px * upem
@@ -283,29 +326,91 @@ func (t *Text) Runes(s, e int) string { return string(t.runes[s:e]) }
 // font).
 func (t *Text) LineHeight() geom.Unit { return t.strut.lineHeight }
 
-// sameFont reports whether runs a and b use the same face and size.
+// sameFont reports whether runs a and b shape alike: same fallback
+// chain, size and language.
 func (t *Text) sameFont(a, b int32) bool {
-	return t.rs[a].face == t.rs[b].face && t.rs[a].size == t.rs[b].size
+	return t.rs[a].face == t.rs[b].face && t.rs[a].size == t.rs[b].size && t.rs[a].lang == t.rs[b].lang
 }
 
-// shape shapes each maximal range of one font (face and size) between
-// forced breaks and tabs. Like Chromium, shaping (kerning, ligatures)
-// continues across inline element boundaries when the font is the same.
+// itemize resolves the script of every rune (UAX #24, as Chromium's
+// ScriptRunIterator): characters of the Common and Inherited scripts
+// (spaces, digits, punctuation, combining marks, joiners) take the script
+// of the run they are in (forced breaks do not end a run: they are
+// Common characters too); at the start of the text they take the first
+// strong script after them; a closing bracket takes the script of its
+// opening bracket.
+func (t *Text) itemize() {
+	t.scr = make([]language.Script, len(t.runes))
+	type open struct {
+		r   rune
+		scr language.Script
+	}
+	var stack []open
+	cur := language.Common
+	start := 0 // first rune still without a strong script
+	for i, r := range t.runes {
+		sc := language.LookupScript(r)
+		if !sc.Strong() {
+			if o, ok := bracket(r); ok {
+				if o == 0 {
+					stack = append(stack, open{r, cur})
+				} else {
+					j := len(stack) - 1
+					for j >= 0 && stack[j].r != o {
+						j--
+					}
+					if j >= 0 {
+						sc = stack[j].scr
+						stack = stack[:j]
+					}
+				}
+			}
+		}
+		if sc.Strong() && sc != cur {
+			if cur == language.Common {
+				for k := start; k < i; k++ {
+					t.scr[k] = sc
+				}
+				for k := range stack {
+					stack[k].scr = sc
+				}
+			}
+			cur = sc
+		}
+		t.scr[i] = cur
+		if cur == language.Common {
+			continue
+		}
+		start = i + 1
+	}
+	for k := start; k < len(t.runes); k++ {
+		t.scr[k] = cur
+	}
+}
+
+// shape shapes each item: a maximal range of one run style (chain, size,
+// language) and one script between forced breaks and tabs. Like
+// Chromium, shaping (kerning, ligatures) continues across inline element
+// boundaries when the font is the same. Font fallback follows Chromium's
+// HarfBuzzShaper: the item is shaped with the first face of the chain;
+// each range of clusters containing a .notdef glyph is shaped again with
+// the next face, and so on; the last face keeps its .notdef glyphs.
 func (t *Text) shape() {
+	t.itemize()
 	t.adv = make([]int64, len(t.runes))
+	t.face = make([]*Face, len(t.runes))
 	start := 0
 	for i := 0; i <= len(t.runes); i++ {
-		if i < len(t.runes) && t.runes[i] != '\n' && t.runes[i] != '\t' && t.sameFont(t.run[i], t.run[start]) {
+		if i < len(t.runes) && t.runes[i] != '\n' && t.runes[i] != '\t' && t.sameFont(t.run[i], t.run[start]) && t.scr[i] == t.scr[start] && t.lvl[i] == t.lvl[start] {
 			continue
 		}
 		if i > start && t.runes[start] != '\n' && t.runes[start] != '\t' {
 			ri := t.run[start]
 			n := len(t.glyphs)
-			t.glyphs = t.rs[ri].face.shape(t.runes[start:i], t.glyphs)
+			t.glyphs = t.shapeFallback(start, i, t.rs[ri].chain, shapeProps{t.scr[start], t.rs[ri].lang, t.lvl[start]%2 == 1}, t.rs[ri].size, t.glyphs)
 			for k := n; k < len(t.glyphs); k++ {
 				g := &t.glyphs[k]
-				g.Cluster += start
-				t.adv[g.Cluster] += int64(g.Advance) * int64(t.rs[ri].size)
+				t.adv[g.Cluster] += g.Advance
 			}
 			// A cluster spanning a run boundary (a ligature) keeps its
 			// advance on its first rune; pieces split there regardless.
@@ -315,36 +420,123 @@ func (t *Text) shape() {
 			start = i + 1
 		}
 	}
-	if sp, ok := t.strut.face.face.NominalGlyph(' '); ok {
-		t.tabStop = 8 * int64(t.strut.face.face.HorizontalAdvance(sp)) * int64(t.strut.size)
+	for k := range t.glyphs { // the face of each cluster, on all its runes
+		g := &t.glyphs[k]
+		for j := g.Cluster; j < len(t.runes) && (j == g.Cluster || t.face[j] == nil && !t.clusterStart(j)); j++ {
+			t.face[j] = g.Face
+		}
+	}
+	f := t.strut.face
+	if sp, ok := f.face.NominalGlyph(' '); ok {
+		t.tabStop = 8 * f.ftAdvance(int64(f.face.HorizontalAdvance(sp)), t.strut.size)
 	}
 }
 
-// segment finds break opportunities (UAX #14).
+// shapeFallback shapes runes [s, e) with chain[0], re-shaping the ranges
+// it has no glyphs for with the rest of the chain. Glyphs are appended in
+// logical (cluster) order.
+func (t *Text) shapeFallback(s, e int, chain []*Face, p shapeProps, size geom.Unit, out []Glyph) []Glyph {
+	gs := chain[0].shape(t.runes, s, e, p, size, nil)
+	if len(chain) == 1 {
+		return append(out, gs...)
+	}
+	// Clusters (in logical order) and whether each lacks a glyph.
+	missing := map[int]bool{}
+	for _, g := range gs {
+		if g.ID == 0 {
+			missing[g.Cluster] = true
+		}
+	}
+	if len(missing) == 0 {
+		return append(out, gs...)
+	}
+	end := func(k int) int { // end of the cluster starting at gs[k]
+		for j := k + 1; j < len(gs); j++ {
+			if gs[j].Cluster != gs[k].Cluster {
+				return gs[j].Cluster
+			}
+		}
+		return e
+	}
+	for k := 0; k < len(gs); {
+		c := gs[k].Cluster
+		if !missing[c] {
+			out = append(out, gs[k])
+			k++
+			continue
+		}
+		// A maximal range of missing clusters [c, ce).
+		j := k
+		for j < len(gs) && missing[gs[j].Cluster] {
+			j++
+		}
+		ce := e
+		if j < len(gs) {
+			ce = gs[j].Cluster
+		} else {
+			ce = end(j - 1)
+		}
+		out = t.shapeFallback(c, ce, chain[1:], p, size, out)
+		k = j
+	}
+	return out
+}
+
+// segment finds break opportunities: UAX #14 (go-text's segmenter),
+// except between two printable ASCII characters, where Chromium uses its
+// own table (asciiBreak) and a rule for '-' before a digit, and after
+// every run of spaces, where Chromium always allows a break.
 func (t *Text) segment() {
-	if len(t.runes) == 0 {
+	n := len(t.runes)
+	if n == 0 {
 		return
 	}
+	brk := make([]bool, n+1) // a segment ends before rune p
 	var seg segmenter.Segmenter
 	seg.Init(t.runes)
 	it := seg.LineIterator()
 	for it.Next() {
 		l := it.Line()
-		s := segment{start: l.Offset, end: l.Offset + len(l.Text)}
+		brk[l.Offset+len(l.Text)] = true
+	}
+	ascii := func(r rune) bool { return r >= '!' && r <= '~' }
+	for p := 1; p < n; p++ {
+		a, b := t.runes[p-1], t.runes[p]
+		if !ascii(a) || !ascii(b) {
+			continue
+		}
+		if a == '-' && b >= '0' && b <= '9' {
+			// "-1" may be a minus sign: break only in "ABCD-1234".
+			brk[p] = p >= 2 && isASCIIAlnum(t.runes[p-2])
+			continue
+		}
+		k := b - '!'
+		brk[p] = asciiBreak[a-'!'][k/8]&(1<<(k%8)) != 0
+	}
+	for p := 1; p < n; p++ {
+		switch {
+		case t.runes[p-1] == '\n':
+			brk[p] = true // forced
+		case t.runes[p-1] == ' ' && t.runes[p] != ' ':
+			// Chromium breaks after every run of spaces, also where UAX #14
+			// does not ("a !", "( a"; Blink's break-before-space-run).
+			brk[p] = true
+		}
+	}
+	start := 0
+	for p := 1; p <= n; p++ {
+		if !brk[p] {
+			continue
+		}
+		s := segment{start: start, end: p}
+		start = p
 		// A forced break: the '\n' itself ends the segment.
-		if s.end > s.start && t.runes[s.end-1] == '\n' {
+		if t.runes[s.end-1] == '\n' {
 			s.forced = true
 			s.end--
 		}
 		for k := s.end - 1; k >= s.start && t.runes[k] == ' '; k-- {
 			s.spaces++
-		}
-		// Tailoring to match Chromium (ICU): no break after '/' or '!'
-		// directly followed by the next word.
-		if n := len(t.segs); n > 0 && !t.segs[n-1].forced && t.segs[n-1].spaces == 0 && t.segs[n-1].end > t.segs[n-1].start &&
-			(t.runes[t.segs[n-1].end-1] == '/' || t.runes[t.segs[n-1].end-1] == '!') {
-			t.segs[n-1].end, t.segs[n-1].spaces, t.segs[n-1].forced = s.end, s.spaces, s.forced
-			continue
 		}
 		// Without soft wrapping, only forced breaks end a segment.
 		if n := len(t.segs); n > 0 && !t.segs[n-1].forced && !wraps(t.p.WhiteSpace) {
@@ -359,6 +551,10 @@ func (t *Text) segment() {
 			t.segs[i].spaces = 0
 		}
 	}
+}
+
+func isASCIIAlnum(r rune) bool {
+	return r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z'
 }
 
 // width returns the advance of runes [s, e) placed at pen position x
@@ -401,7 +597,7 @@ func (t *Text) pieces() {
 	for i := 0; i < n; {
 		j := i + 1
 		if t.runes[i] != '\t' && t.runes[i] != '\n' {
-			for j < n && t.run[j] == t.run[i] && t.runes[j] != '\t' && t.runes[j] != '\n' {
+			for j < n && t.run[j] == t.run[i] && t.lvl[j] == t.lvl[i] && t.runes[j] != '\t' && t.runes[j] != '\n' {
 				j++
 			}
 		}
@@ -423,6 +619,21 @@ func (t *Text) lineSpan(s, e int) geom.Unit {
 		i = j
 	}
 	return w
+}
+
+// fitSpan is the width used to decide whether a line fits: like lineSpan
+// (pieces rounded up to 1/64 px), except that the last piece counts with
+// its exact advance rounded to the nearest 1/64 px. Chromium's line
+// breaker places whole items by their rounded widths but finds the break
+// in the last item with unrounded positions, so a line a few 1/65536 px
+// wider than the box still fits (CJK advances at 15px are 15.0001px).
+func (t *Text) fitSpan(s, e int) geom.Unit {
+	if e <= s {
+		return 0
+	}
+	ps := max(t.pstart[e-1], s)
+	f := t.pos[e] - t.pos[ps]
+	return t.lineSpan(s, ps) + geom.Unit((f+t.upem/2)/t.upem)
 }
 
 // snapped returns the position of rune i in its hard line (which starts
@@ -495,15 +706,16 @@ func (t *Text) Layout(w geom.Unit) *Block {
 	}
 	b := &Block{Width: w}
 	wrap := wraps(t.p.WhiteSpace)
+	limit := len(t.segs) // the line may take segments before limit
 	for i := 0; i < len(t.segs); {
 		// One line: take segments greedily.
 		start := i
 		ls := t.segs[start].start
 		var content geom.Unit
-		for i < len(t.segs) {
+		for i < limit {
 			s := t.segs[i]
 			c := t.lineSpan(ls, s.end-s.spaces)
-			if i > start && wrap && c > w {
+			if i > start && wrap && t.fitSpan(ls, s.end-s.spaces) > w {
 				break
 			}
 			content = c
@@ -520,6 +732,22 @@ func (t *Text) Layout(w geom.Unit) *Block {
 			}
 		}
 		ln.FullEnd = ln.End
+		if t.p.Align != t.startAlign() && !last.forced && i < len(t.segs) && ln.End < last.end {
+			kerned := ln
+			t.reshapeEnd(&ln)
+			// Without the kerning against the removed space the line can
+			// overflow although it fitted: then, as Chromium's line breaker
+			// does, its last segment moves to the next line, or with a
+			// single segment the line keeps its kerned width.
+			if wrap && ln.Width > w && kerned.Width <= w {
+				if i-1 > start {
+					i, limit = start, i-1
+					continue
+				}
+				ln = kerned
+			}
+		}
+		limit = len(t.segs)
 		if t.p.Ellipsis && ln.Width > w {
 			t.truncate(&ln, w)
 		}
@@ -529,9 +757,16 @@ func (t *Text) Layout(w geom.Unit) *Block {
 		case style.TextAlignCenter:
 			ln.X = (w - ln.Width) / 2
 		}
-		if ln.X < 0 {
+		if ln.X < 0 || ln.Width > w {
+			// A line wider than the box starts at its start edge: it
+			// overflows to the right in left-to-right text and to the left
+			// in right-to-left text.
 			ln.X = 0
+			if t.p.RTL {
+				ln.X = w - ln.Width
+			}
 		}
+		t.reorder(&ln)
 		b.Lines = append(b.Lines, ln)
 	}
 	var y geom.Unit
@@ -546,6 +781,43 @@ func (t *Text) Layout(w geom.Unit) *Block {
 	return b
 }
 
+// startAlign is the physical alignment of the paragraph's start side.
+func (t *Text) startAlign() style.TextAlign {
+	if t.p.RTL {
+		return style.TextAlignRight
+	}
+	return style.TextAlignLeft
+}
+
+// reshapeEnd emulates Chromium removing the collapsible spaces at the end
+// of a soft-wrapped line not aligned to its start side (center, or right
+// in left-to-right text, left in right-to-left text;
+// NGLineBreaker::RemoveTrailingCollapsibleSpace): the part of the line's
+// last piece before the spaces is shaped again on its own, which drops
+// kerning with the space (e.g. "." or "," followed by a space in Inter).
+func (t *Text) reshapeEnd(ln *Line) {
+	e := ln.End
+	if e <= ln.Start {
+		return
+	}
+	ps := max(t.pstart[e-1], ln.Start)
+	ri := t.run[ps]
+	var sum int64
+	for s := ps; s < e; {
+		k := s + 1
+		for k < e && t.scr[k] == t.scr[s] && t.lvl[k] == t.lvl[s] {
+			k++
+		}
+		for _, g := range t.shapeFallback(s, k, t.rs[ri].chain, shapeProps{t.scr[s], t.rs[ri].lang, t.lvl[s]%2 == 1}, t.rs[ri].size, nil) {
+			sum += g.Advance
+		}
+		s = k
+	}
+	w := t.lineSpan(ln.Start, ps) + t.toUnits(sum)
+	ln.endAdj = w - ln.Width
+	ln.Width = w
+}
+
 // lineExtent returns how far a line box extends above and below its
 // baseline: the maximum over the block's strut and the runs with content
 // on the line (CSS 2.1 §10.8, all inline boxes baseline-aligned).
@@ -558,14 +830,23 @@ func (t *Text) lineExtent(ln *Line) (above, below geom.Unit) {
 		}
 	}
 	seen := -1
+	var seenFace *Face
 	end := ln.FullEnd
 	if end < len(t.runes) && t.runes[end] == '\n' && t.runs[t.run[end]].Break {
 		end++ // a <br> ending the line is on it
 	}
 	for i := ln.Start; i < end; i++ {
-		if r := int(t.run[i]); r != seen {
-			seen = r
+		r := int(t.run[i])
+		if r != seen {
+			seen, seenFace = r, nil
 			add(&t.rs[r])
+		}
+		// With line-height: normal, fallback fonts used on the line take
+		// part with their own metrics (as in Chromium).
+		if f := t.face[i]; f != nil && f != t.rs[r].face && f != seenFace && t.runs[r].Style.LineHeight.Kind == style.LineHeightNormal {
+			seenFace = f
+			fi := faceInfo(f, t.runs[r].Style)
+			add(&fi)
 		}
 	}
 	return
@@ -610,7 +891,7 @@ func (t *Text) clusterStart(i int) bool {
 
 // ellipsisAdvance is the advance of "…" in the block's style, fine units.
 func (t *Text) ellipsisAdvance() int64 {
-	return int64(t.strut.face.ellipsisAdvance()) * int64(t.strut.size)
+	return t.strut.face.ftAdvance(int64(t.strut.face.ellipsisAdvance()), t.strut.size)
 }
 
 // InkWidth returns the width of ln without trailing spaces.
@@ -618,6 +899,9 @@ func (t *Text) InkWidth(ln *Line) geom.Unit {
 	e := ln.End
 	for e > ln.Start && t.runes[e-1] == ' ' && t.p.WhiteSpace != style.WhiteSpacePre {
 		e--
+	}
+	if e == ln.End {
+		return t.lineSpan(ln.Start, e) + ln.endAdj
 	}
 	return t.lineSpan(ln.Start, e)
 }
@@ -628,7 +912,13 @@ func (t *Text) EllipsisWidth() geom.Unit { return t.toUnits(t.ellipsisAdvance())
 // X returns the x offset of the pen before rune i on line ln (relative to
 // the content box), for fragments and hit testing.
 func (t *Text) X(ln *Line, i int) geom.Unit {
+	if ln.vis != nil {
+		return t.visX(ln, i)
+	}
 	if i >= len(t.runes) || i >= ln.FullEnd {
+		if i == ln.End {
+			return ln.X + t.lineSpan(ln.Start, i) + ln.endAdj
+		}
 		return ln.X + t.lineSpan(ln.Start, i)
 	}
 	ps := max(t.pstart[i], ln.Start)
@@ -642,11 +932,25 @@ type PlacedGlyph struct {
 	ID   uint16
 	X, Y geom.Unit
 	Run  int
+	Face *Face
 }
 
 // Glyphs appends the glyphs of line ln (including its ellipsis) with
 // positions relative to the content box.
 func (t *Text) Glyphs(ln *Line, out []PlacedGlyph) []PlacedGlyph {
+	if ln.vis != nil {
+		out = t.visualGlyphs(ln, out)
+		if ln.Ellipsis {
+			if id, ok := t.strut.face.face.NominalGlyph('…'); ok {
+				x := ln.X + ln.Width
+				if t.p.RTL {
+					x = ln.X - t.EllipsisWidth()
+				}
+				out = append(out, PlacedGlyph{ID: uint16(id), X: x, Y: ln.Baseline, Run: -1, Face: t.strut.face})
+			}
+		}
+		return out
+	}
 	gi := 0
 	for gi < len(t.glyphs) && t.glyphs[gi].Cluster < ln.Start {
 		gi++
@@ -658,19 +962,19 @@ func (t *Text) Glyphs(ln *Line, out []PlacedGlyph) []PlacedGlyph {
 		for ; gi < len(t.glyphs) && t.glyphs[gi].Cluster == i; gi++ {
 			g := t.glyphs[gi]
 			r := t.run[i]
-			sz := int64(t.rs[r].size)
 			out = append(out, PlacedGlyph{
-				ID:  g.ID,
-				X:   px + t.toUnitsFloor(t.pos[i]-t.pos[ps]+off+int64(g.XOff)*sz),
-				Y:   ln.Baseline - t.toUnitsFloor(int64(g.YOff)*sz),
-				Run: int(r),
+				ID:   g.ID,
+				X:    px + t.toUnitsFloor(t.pos[i]-t.pos[ps]+off+g.XOff),
+				Y:    ln.Baseline - t.toUnitsFloor(g.YOff),
+				Run:  int(r),
+				Face: g.Face,
 			})
-			off += int64(g.Advance) * sz
+			off += g.Advance
 		}
 	}
 	if ln.Ellipsis {
 		if id, ok := t.strut.face.face.NominalGlyph('…'); ok {
-			out = append(out, PlacedGlyph{ID: uint16(id), X: ln.X + t.lineSpan(ln.Start, ln.End), Y: ln.Baseline, Run: -1})
+			out = append(out, PlacedGlyph{ID: uint16(id), X: ln.X + t.lineSpan(ln.Start, ln.End), Y: ln.Baseline, Run: -1, Face: t.strut.face})
 		}
 	}
 	return out

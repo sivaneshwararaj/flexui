@@ -60,8 +60,12 @@ type layoutCase struct {
 	noChrome string
 }
 
-func build(t testing.TB, s *spec) *Node {
-	st := style.Initial()
+func build(t testing.TB, s *spec) *Node { return buildIn(t, s, nil) }
+
+// buildIn builds s with the inherited properties of parent (direction,
+// for the rtl_ cases).
+func buildIn(t testing.TB, s *spec, parent *style.Style) *Node {
+	st := style.Inherit(parent)
 	decls, w := style.ParseDeclarations(s.css)
 	w = append(w, st.ApplyAll(decls, style.Context{})...)
 	if len(w) != 0 {
@@ -75,7 +79,7 @@ func build(t testing.TB, s *spec) *Node {
 		n.Measure = textMeasure{s.words, geom.Px(s.w), geom.Px(s.h)}
 	}
 	for _, k := range s.kids {
-		n.Children = append(n.Children, build(t, k))
+		n.Children = append(n.Children, buildIn(t, k, &st))
 	}
 	return n
 }

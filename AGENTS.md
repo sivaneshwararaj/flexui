@@ -1,5 +1,7 @@
 # Notes for coding agents
 
+Work in progress and the resume point: [PROGRESS.md](PROGRESS.md).
+
 ## If you are building an app WITH flexui (importing it)
 
 Read [docs/GUIDE.md](docs/GUIDE.md) first; it is complete and checked

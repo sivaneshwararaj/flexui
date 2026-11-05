@@ -49,11 +49,21 @@ var knownRandomMismatches = map[string]string{
 	"random_1347": "D14 (sub-pixel rounding, at most 2/64 px)",
 	"random_1465": "D14 (sub-pixel rounding, at most 2/64 px)",
 	"random_1863": "D14 (sub-pixel rounding, at most 2/64 px)",
+	// Right-to-left cases: each also differs with every direction
+	// declaration removed (checked with the trees stripped of direction),
+	// reduced with TestReduce to the deviation named.
+	"rtl_052": "D11 (absolute box with top+bottom that does not fit its inset-modified containing block)",
+	"rtl_239": "D11 (absolute box with top+bottom that does not fit its inset-modified containing block)",
+	"rtl_244": "D12 (intrinsic size of wrapping containers with explicit flex-basis items)",
+	"rtl_354": "D12 (intrinsic size of wrapping containers with explicit flex-basis items)",
+	"rtl_131": "D14 (sub-pixel rounding, at most 2/64 px)",
+	"rtl_313": "D14 (sub-pixel rounding, at most 2/64 px)",
 }
 
 type gen struct {
 	r   *rand.Rand
 	ids int
+	rtl bool // generate direction (the rtl_ cases); off keeps the random_ cases unchanged
 }
 
 func (g *gen) pick(opts ...string) string { return opts[g.r.IntN(len(opts))] }
@@ -79,6 +89,13 @@ func (g *gen) css(depth int, isRoot bool) string {
 	add := func(p int, f func() string) {
 		if g.chance(p) {
 			d = append(d, f())
+		}
+	}
+	if g.rtl {
+		if isRoot {
+			d = append(d, "direction:rtl")
+		} else {
+			add(15, func() string { return "direction:" + g.pick("ltr", "rtl") })
 		}
 	}
 	add(50, func() string { return "flex-direction:" + g.pick("row", "column", "row-reverse", "column-reverse") })
@@ -156,4 +173,23 @@ func randomCases() []layoutCase {
 	return out
 }
 
-func allCases() []layoutCase { return append(append([]layoutCase{}, cases...), randomCases()...) }
+// rtlCaseCount random trees with direction: rtl at the root (and ltr or
+// rtl on some descendants) check the flex axes in right-to-left
+// containers (spec/SUBSET.md §2, direction).
+const rtlCaseCount = 400
+
+func rtlCases() []layoutCase {
+	var out []layoutCase
+	for i := 0; i < rtlCaseCount; i++ {
+		g := &gen{r: rand.New(rand.NewPCG(0x47A1, uint64(i))), rtl: true}
+		vw, vh := 100+g.r.IntN(300), 100+g.r.IntN(300)
+		root := g.node(0, true)
+		root.id = "root"
+		out = append(out, layoutCase{name: fmt.Sprintf("rtl_%03d", i), vw: vw, vh: vh, root: root})
+	}
+	return out
+}
+
+func allCases() []layoutCase {
+	return append(append(append([]layoutCase{}, cases...), randomCases()...), rtlCases()...)
+}

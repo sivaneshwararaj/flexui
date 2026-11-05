@@ -1,6 +1,103 @@
 # Status
 
-Last updated after the macOS run (stages 1-7 pass). Next steps: Windows stage results, IME composition (rest of M8).
+Last updated after step 10, the end of the multilingual work (Tamil
+paste diagnosis, script itemization and font fallback, bidi, editing,
+IME, CJK). Waiting on the user: stages 8 and 9 on macOS and Windows,
+stage 6 again on macOS.
+
+### CJK (step 10)
+
+* `fonts/cjk`: Noto Sans SC subset, Regular only (+8.3 MB): Chinese and
+  Japanese kana. Line breaking between ideographs is UAX #14 (go-text);
+  Chinese and Japanese without punctuation pairs match Chromium exactly
+  (`testdata/text/docs/script_cjk.html`). Not done: Chromium's
+  text-spacing-trim of full-width punctuation (D34), Korean (no Hangul
+  font), Japanese glyph forms (the SC subset is used), CJK bold.
+* Line fitting now follows Chromium's breaker for the last piece of a
+  line (exact advance), which also fixed two older differing breaks.
+
+### IME on the platforms (step 9)
+
+* Windows: IMM32 messages, composition window hidden, candidate window
+  at the caret. macOS: NSTextInputClient with three methods in Go
+  assembly (struct returns). Both compile for all targets; **neither has
+  run**. Stage 9 (`go run ./platform/<darwin|windows>/stages/stage9`)
+  prints RESULT lines; the READMEs list what is untested and the risks.
+* macOS typing now goes through `interpretKeyEvents:` (also for plain
+  text): re-run stage 6 on a Mac to confirm typing still works.
+
+### IME composition (step 8)
+
+* Composition events in the platform interface, marked text in the
+  value (as Chromium, measured with CDP), underline, caret rectangle
+  query, commit on blur/press; headless test replaying the Chromium
+  session (`TestComposition`, `testdata/multilingual/ime_*.png`).
+* Not done: clause underlines, IME selection highlight, composition
+  event handlers.
+
+### Editing (step 7)
+
+* Measured in Chromium 153 (`<input>`, Playwright) and matched: arrow
+  keys move by grapheme cluster; Backspace removes one code point of an
+  Indic, Hebrew, Arabic or accented cluster but whole emoji sequences;
+  Delete removes a whole cluster; arrow keys move logically (in a
+  right-to-left input ArrowRight goes backward). Note: the request said
+  "bidi visual movement"; Chromium on Linux moves logically, so flexui
+  does too (visual movement would differ from the oracle).
+* Right-to-left inputs: right-aligned, scroll range on both sides,
+  caret at the line ends on the correct side, selections in mixed text
+  as several rectangles. Headless goldens:
+  `testdata/multilingual/input_rtl_*.png`.
+* Not done: visual (rather than logical) arrow movement as an option;
+  double-click word selection; undo.
+
+### Bidirectional text (step 6)
+
+* `direction`, `dir` (incl. `auto` and isolates on inline elements),
+  `text-align: start/end`, UAX #9 reordering, right-to-left flex layout,
+  Arabic and Hebrew packs (+288 KB, +38 KB; the bidi code adds ~120 KB
+  to every binary).
+* Verified against Chromium: hand-written bidi documents and 150 random
+  ones with every grapheme's position compared (142 exact; 8 recorded
+  as D32/D33), 400 random right-to-left layout trees (all match except 6
+  that differ the same way without direction: D11, D12, D14).
+* Found on the way: Chromium breaks after every space run (fixed for all
+  text); go-text's bidi Runs merge levels 0 and 2 (worked around by
+  reading its per-character levels); go-text drops the text after a
+  paragraph separator (levels are computed per hard line).
+* Not done: inputs are left to right only (`dir` on `<input>` has no
+  effect on its text yet; step 7); `unicode-bidi`, `<bdi>`, `<bdo>`;
+  vertical text.
+
+### Multi-script text (step 5)
+
+* Itemization by script, Chromium-style per-cluster font fallback, the
+  `lang` attribute as shaping language, opt-in packs `fonts/tamil`
+  (+95 KB) and `fonts/devanagari` (+364 KB). The Tamil paste problem is
+  fixed when the app imports `fonts/tamil` (review/step5: before/after).
+* Verified against Chromium with the same fonts via `@font-face`: 3
+  hand-written script documents and 150 seeded random multi-script
+  documents (boxes, line breaks, line widths, heights) match exactly,
+  except one random document 1/64 px off (D32, float32 rounding). All
+  2,510 layout cases, the Latin text documents and the render goldens
+  are unchanged.
+* Found on the way and fixed (they also affect Latin text): Chromium's
+  ASCII line-break table (all 8,836 printable pairs now match), the
+  kerning dropped at the end of centered/right-aligned soft-wrapped
+  lines (3 of 6 D23 cases fixed), FreeType/HarfBuzz advance scaling.
+* Not verified: right-to-left scripts (step 6), scripts without a pack
+  (drawn as .notdef boxes, as before), font packs on real macOS/Windows
+  windows (stage 8 imports them; not run yet).
+* `RenderHTML` (no App) does not draw `<input>` values; this predates
+  the multilingual work (input text is drawn in apps).
+
+### Tamil paste diagnosis (Phase 1)
+
+| Layer | Finding |
+|---|---|
+| Clipboard | Correct. Headless: 13 multilingual strings paste and copy back byte-identical (`TestPasteMultilingual`). Windows UTF-16 conversion, surrogate pairs and NUL termination are unit-tested on every OS (`platform/windows/utf16_test.go`); the read is now bounded by `GlobalSize` (it scanned for a NUL without a limit). macOS passes Go strings to `stringWithUTF8String:` as NUL-terminated copies (checked in purego v0.10.0's `addValue`). The real-clipboard round trip is stage 8 on each OS: **not run yet**. |
+| Buffer | Data intact; clusters follow UAX #29 (Unicode 15.1 in go-text v0.3.5, incl. Devanagari conjuncts as one cluster; Tamil splits at the pulli as UAX #29 specifies). **Bug fixed:** word movement and Ctrl/Alt+Backspace treated vowel signs, viramas and joiners as word breaks (Ctrl+Backspace at the end of `नमस्ते दुनिया` deleted both words). Remaining difference from browsers: Backspace deletes a whole cluster (`स्ते`), browsers delete one code point in Indic clusters (step 7). |
+| Drawing | **At fault for what you saw.** Inter has no Tamil glyphs, and each code point is drawn as its own .notdef box (vowel signs and pulli included), so `தமிழ்` shows five boxes: looks garbled, data is not (`review/phase1`). Fixed by font fallback (step 5). |
 
 | Milestone | State |
 |---|---|
@@ -12,9 +109,9 @@ Last updated after the macOS run (stages 1-7 pass). Next steps: Windows stage re
 | M5 Handlers and state | done |
 | M6 Interaction | done |
 | M5b Inline formatting, images, default styles, disabled, focus events, scrollbars | done |
-| M7 Portability gate + macOS | gate done; macOS stages 1-7 passed on an Apple-silicon Mac (macOS 27.2), incl. typing and resizing; clipboard, scale changes between displays and Intel Macs unverified |
+| M7 Portability gate + macOS | gate done; macOS stages 1-7 passed on an Apple-silicon Mac (macOS 27.2), incl. typing and resizing; clipboard, scale changes between displays and Intel Macs unverified; stage 8 (multilingual clipboard) not run |
 | M8 Text input | M8a done (editing model, headless); IME composition with the macOS step |
-| Windows backend | stages 1-5 pass on Windows (build 26300); stage 6 partial: typing works, Ctrl+C did not copy (diagnostics added, re-run pending); stage 7 not run (see platform/windows/README.md) |
+| Windows backend | stages 1-7 pass on Windows (build 26300), demo runs; clipboard both ways after an OpenClipboard retry; stage 8 (multilingual clipboard) not run (see platform/windows/README.md) |
 | M9 Demo app | done headless (`examples/demo`); the window is untested |
 
 ## Works
@@ -105,7 +202,7 @@ Last updated after the macOS run (stages 1-7 pass). Next steps: Windows stage re
   content in `platform/internal/stagekit`); `examples/counter` and
   `examples/demo` take `-window` on Windows too. Verified by the user:
   stages 1-2 (Win32 bindings, window, presentation, 125% DPI sizing) on
-  Windows build 26300; stages 3-5 pass, stage 6 partial (Ctrl+C), stage 7 not run.
+  Windows build 26300; stages 1-7 pass and the demo runs.
 * Demo app (M9, `examples/demo`): a contacts manager (searchable list
   with selection and scrolling, edit form with Save/Revert enabled only
   when dirty, delete confirmation modal with Escape and backdrop click,

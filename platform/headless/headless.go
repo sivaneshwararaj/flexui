@@ -193,6 +193,22 @@ func (s *Session) Type(text string) {
 	s.Send(platform.Event{Kind: platform.EventText, Text: text})
 }
 
+// Compose sends IME marked text with the caret at sel (rune index in
+// marked); see platform.EventCompose.
+func (s *Session) Compose(marked string, sel int) {
+	s.Send(platform.Event{Kind: platform.EventCompose, Text: marked, SelStart: sel, SelEnd: sel})
+}
+
+// Commit ends an IME composition with the final text.
+func (s *Session) Commit(text string) {
+	s.Send(platform.Event{Kind: platform.EventComposeCommit, Text: text})
+}
+
+// CancelComposition removes the marked text.
+func (s *Session) CancelComposition() {
+	s.Send(platform.Event{Kind: platform.EventComposeCancel})
+}
+
 // Resize changes the surface size.
 func (s *Session) Resize(w, h int) {
 	s.Send(platform.Event{Kind: platform.EventResize, Width: w, Height: h})

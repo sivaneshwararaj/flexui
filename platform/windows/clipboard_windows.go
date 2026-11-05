@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"time"
 	"unsafe"
-
-	"golang.org/x/sys/windows"
 )
 
 // Clipboard is the Windows clipboard (CF_UNICODETEXT).
@@ -45,14 +43,17 @@ func (c Clipboard) ReadText() (string, error) {
 		return "", fmt.Errorf("windows: GlobalLock failed")
 	}
 	defer pGlobalUnlock.Call(h)
-	s := windows.UTF16PtrToString((*uint16)(ptr(p)))
+	// Bound the read by the block size: text without a terminating NUL
+	// must not be over-read.
+	size, _, _ := pGlobalSize.Call(h)
+	s := decodeClipText(unsafe.Slice((*uint16)(ptr(p)), size/2))
 	debugf("clipboard read %d bytes", len(s))
 	return s, nil
 }
 
 // WriteText implements platform.Clipboard.
 func (c Clipboard) WriteText(s string) error {
-	u, err := windows.UTF16FromString(s)
+	u, err := encodeClipText(s)
 	if err != nil {
 		return err
 	}

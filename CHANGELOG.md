@@ -6,12 +6,89 @@ versioning with `v0.x` tags until the API settles.
 ## Unreleased
 
 ### Added
+- `fonts/cjk` (Noto Sans SC subset, Regular; Chinese and Japanese kana).
+  Packs may omit the Bold face. Chinese and Japanese text checked
+  against Chromium; CJK punctuation trimming is not done (D34).
+- `testdata/multilingual` pages for CJK and long paragraphs.
+- IME on Windows (IMM32) and macOS (NSTextInputClient; struct-returning
+  methods in Go assembly since purego callbacks cannot return structs),
+  with stage 9 on each OS. Compile-checked only; not yet run. On macOS
+  all typing now goes through `interpretKeyEvents:`.
+- IME composition model: `platform.EventCompose`, `EventComposeCommit`,
+  `EventComposeCancel`, `platform.CaretRecter` / `App.CaretRect`,
+  `Ctx.Composing`, headless `Compose`/`Commit`/`CancelComposition`;
+  marked text in the value and underlined, as in Chromium.
+- Inputs: right-to-left inputs (`dir="rtl"`: right-aligned, arrow keys
+  reversed as in Chromium), bidi-reordered text with multi-rectangle
+  selections in every input.
+- Bidirectional text: `direction`, the `dir` attribute (`ltr`, `rtl`,
+  `auto`; isolates on inline elements), `text-align: start | end` (start
+  is the new initial value, same as `left` in left-to-right text), UAX #9
+  levels and line reordering, right-to-left flex layout (row axes,
+  column cross axes, absolute and relative positioning), font packs
+  `fonts/arabic` and `fonts/hebrew`. Checked against Chromium: 150
+  random bidi documents glyph by glyph, 400 random right-to-left layout
+  trees (deviations D32, D33).
+- Multi-script text: itemization by script (UAX #24, paired brackets),
+  Chromium-style font fallback per cluster, the `lang` attribute as the
+  shaping language, and opt-in font packs `fonts/tamil` (Noto Sans
+  Tamil) and `fonts/devanagari` (Noto Sans Devanagari). Checked against
+  Chromium (the packs loaded through `@font-face`) on hand-written and
+  150 seeded random multi-script documents (`testdata/text/script.json`).
+  `testdata/multilingual` pages for checking by eye.
+- Multilingual paste/copy tests (`internal/testtext` samples), Windows
+  UTF-16 clipboard conversion tests, and stage 8 on macOS and Windows: a
+  real-clipboard round trip of the same strings.
+
+### Changed
+- Line fitting: the last piece of a line counts with its exact advance
+  (rounded to the nearest 1/64 px), as Chromium's line breaker; fixes one
+  D23 and one D33 case and CJK lines that are a few 1/65536 px wider than
+  the box.
+- Inputs: Backspace deletes one code point of a cluster (vowel signs,
+  accents), whole clusters only for emoji sequences, as Chromium; Delete
+  still deletes a whole cluster.
+- Chromium allows a line break after every run of spaces (also before
+  `!`, `)` ...); flexui now does too.
+- Glyph advances are scaled as Chromium does on Linux (FreeType
+  advances, HarfBuzz GPOS scaling, 1/65536 px); for Inter at whole-pixel
+  sizes nothing changes.
+- Line breaks between two printable ASCII characters follow Chromium's
+  own table (measured from Chromium 153 for all pairs) instead of UAX #14
+  plus the `/` and `!` tailoring.
+- Centered and right-aligned lines that end at a soft wrap drop the
+  kerning against the removed trailing space, as Chromium does (fixes 3
+  of the 6 cases of deviation D23).
+- `line-height: normal` takes the metrics of fallback fonts used on a
+  line into account.
+
+### Fixed
+- Inputs: word movement and word deletion (Ctrl/Alt+Arrow,
+  Ctrl/Alt+Backspace) treated vowel signs, viramas, combining marks and
+  joiners as word breaks; words are now judged per grapheme cluster.
+- Windows clipboard read is bounded by the memory block size
+  (`GlobalSize`) instead of scanning for a NUL.
+
+## v0.1.0 (2026-11-05)
+
+First tagged state. All seven platform verification stages pass on macOS
+(Version 27.2) and Windows (build 26300, 125% scaling); the demo runs on
+both. Module path: `github.com/sivaneshwararaj/flexui`.
+
+### Fixed
+- Windows clipboard: `OpenClipboard` is retried for about 100 ms (another
+  process can hold the clipboard briefly), `EmptyClipboard` is checked,
+  and failures are logged with `-debug`.
+
+### Added
+- Headless test of Ctrl+C/X/V (the copy test used Cmd only); Windows
+  stage 6 prints a `RESULT` line for every clipboard read and write.
 - Documentation for users and coding agents: `README.md`,
   `docs/GUIDE.md`, `AGENTS.md`, `llms.txt`; Go examples
   (`example_test.go`) checked by `go test`. `Ctx.InputValue(id)` reads an
   input inside handlers.
 - `platform/windows` (x/sys/windows, no cgo) with `windows.Run`, staged
-  verification commands and README (compile-checked, not yet run);
+  verification commands and README (stages 1-7 pass on Windows);
   `-window` on Windows for the counter and demo examples. Dependency:
   `golang.org/x/sys` v0.41.0 (Windows backend only).
 - Damage-region repainting and copying, incremental paint-only restyle
@@ -23,8 +100,8 @@ versioning with `v0.x` tags until the API settles.
 - M7: portability gate (builds/vets all targets, dependency rules on every
   OS, render hashes on linux/386, `TestHashes` with
   `testdata/render/hashes.txt`); `platform/darwin` (purego) with
-  `darwin.Run`, staged verification commands and README (compile-checked,
-  not yet run on a Mac); `examples/counter -window`. New dependency:
+  `darwin.Run`, staged verification commands and README (stages 1-7
+  pass on a Mac); `examples/counter -window`. New dependency:
   `github.com/ebitengine/purego` v0.10.0 (macOS backend only).
 - M8a text inputs: editing model (`internal/edit`), keyboard editing and
   movement, clipboard (`App.SetClipboard`), pointer caret and selection,

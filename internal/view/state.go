@@ -149,6 +149,7 @@ func (v *View) setFocus(n *dom.Node) {
 	v.focus = n
 	if old != n {
 		if old != nil {
+			v.endComposition(old)
 			if st := v.input(old); st != nil {
 				v.changed(old, st) // change fires before blur, as in browsers
 				v.needPaint = true

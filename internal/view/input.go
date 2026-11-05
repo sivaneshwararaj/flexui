@@ -33,6 +33,13 @@ type inputState struct {
 	attr    string    // the value attribute at the last render
 	scrollX geom.Unit // horizontal scroll of the text
 	atFocus string    // value when focused (for change events)
+	// comp is the IME composition in progress: the marked text is in the
+	// buffer at [start, start+n) (as in browsers, it is part of the value
+	// while composing).
+	comp struct {
+		active   bool
+		start, n int
+	}
 }
 
 // syncInputs creates, updates and drops input states for a new document:
@@ -86,10 +93,14 @@ func (v *View) inputView(n *dom.Node) render.InputState {
 	if st == nil {
 		return render.InputState{}
 	}
-	return render.InputState{
+	rs := render.InputState{
 		Text: st.buf.String(), Caret: st.buf.Caret, Anchor: st.buf.Anchor,
 		Focused: n == v.focus, ScrollX: st.scrollX,
 	}
+	if st.comp.active {
+		rs.MarkStart, rs.MarkEnd = st.comp.start, st.comp.start+st.comp.n
+	}
+	return rs
 }
 
 // InputValue returns the current text of the input with the given id.
@@ -123,8 +134,8 @@ func (v *View) reveal(n *dom.Node, st *inputState) {
 	case x < st.scrollX:
 		st.scrollX = x
 	}
-	maxScroll := max(0, v.doc.InputTextWidth(n, s)-room)
-	st.scrollX = min(max(st.scrollX, 0), maxScroll)
+	lo, hi := v.doc.InputScrollRange(n, s, room)
+	st.scrollX = min(max(st.scrollX, lo), hi)
 }
 
 // edited sends an input event after a change of the text.
@@ -157,7 +168,9 @@ func (v *View) editKey(n *dom.Node, st *inputState, k string, mods uint8) bool {
 	}
 	switch k {
 	case "ArrowLeft", "ArrowRight":
-		b.Move(k == "ArrowRight", unit, shift)
+		// Logical movement, as Chromium: Right is forward in a
+		// left-to-right input, backward in a right-to-left one.
+		b.Move((k == "ArrowRight") != v.doc.InputRTL(n), unit, shift)
 	case "Home", "End", "ArrowUp", "ArrowDown":
 		b.Move(k == "End" || k == "ArrowDown", edit.Line, shift)
 	case "Backspace", "Delete":
@@ -244,4 +257,80 @@ func (v *View) InputSelection(id string) (caret, anchor int) {
 		return st.buf.Caret, st.buf.Anchor
 	}
 	return 0, 0
+}
+
+// Compose starts or updates an IME composition in the focused input: the
+// marked text replaces the previous marked text (or, when a composition
+// starts, the selection), with the caret at sel within it. As in
+// Chromium the marked text is part of the value, and an input event
+// (Composing) follows every update. It reports whether an input was
+// focused.
+func (v *View) Compose(marked string, sel int) bool {
+	n := v.focus
+	st := v.input(n)
+	if st == nil || n.Disabled() {
+		return false
+	}
+	b := st.buf
+	if !st.comp.active {
+		if s, e := b.Selection(); s != e {
+			b.Delete(false, edit.Char)
+		}
+		st.comp.active, st.comp.start, st.comp.n = true, b.Caret, 0
+	}
+	m := []rune(marked)
+	st.comp.n = b.Replace(st.comp.start, st.comp.start+st.comp.n, string(m))
+	b.SetCaret(st.comp.start+min(max(sel, 0), st.comp.n), false)
+	v.reveal(n, st)
+	v.dispatch(&Event{Type: "input", Target: n, Value: b.String(), Composing: true})
+	return true
+}
+
+// Commit ends the composition with the final text (replacing the marked
+// text; without a composition it inserts the text like typing).
+func (v *View) Commit(s string) bool {
+	n := v.focus
+	st := v.input(n)
+	if st == nil || n.Disabled() {
+		return false
+	}
+	if !st.comp.active {
+		return v.Text(s)
+	}
+	b := st.buf
+	k := b.Replace(st.comp.start, st.comp.start+st.comp.n, s)
+	b.SetCaret(st.comp.start+k, false)
+	st.comp.active = false
+	v.edited(n, st)
+	return true
+}
+
+// CancelComposition removes the marked text and ends the composition.
+func (v *View) CancelComposition() bool {
+	n := v.focus
+	st := v.input(n)
+	if st == nil || !st.comp.active {
+		return false
+	}
+	return v.Commit("")
+}
+
+// endComposition commits the marked text as it is (focus moves away or
+// the pointer is pressed, as browsers do).
+func (v *View) endComposition(n *dom.Node) {
+	if st := v.input(n); st != nil && st.comp.active {
+		st.comp.active = false
+		v.needPaint = true
+	}
+}
+
+// CaretRect returns the focused input's caret rectangle in document
+// coordinates (for placing an IME candidate window).
+func (v *View) CaretRect() (geom.Rect, bool) {
+	n := v.focus
+	st := v.input(n)
+	if st == nil || v.doc == nil {
+		return geom.Rect{}, false
+	}
+	return v.doc.InputCaretRect(n, st.buf.String(), st.buf.Caret, st.scrollX), true
 }

@@ -25,6 +25,7 @@ type Window struct {
 	frames    int
 	tracking  bool   // TrackMouseEvent armed for WM_MOUSELEAVE
 	surr      uint16 // pending high surrogate from WM_CHAR
+	composing bool   // an IME composition is in progress
 	redrawing bool
 	// OnFrame, if set, is called after each rendered frame.
 	OnFrame func(img *image.RGBA, w, h int, scale float64)
@@ -339,6 +340,11 @@ func wndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 	case wmChar:
 		w.char(uint16(wParam))
 		return 0
+	case wmImeSetContext, wmImeStartComposition, wmImeComposition, wmImeEndComposition:
+		if r, ok := w.ime(message, wParam, lParam); ok {
+			w.render()
+			return r
+		}
 	case wmClose:
 		pDestroyWindow.Call(hwnd)
 		return 0
@@ -351,6 +357,9 @@ func wndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 	r, _, _ := pDefWindowProcW.Call(hwnd, message, wParam, lParam)
 	return r
 }
+
+// Clipboard returns the clipboard owned by this window.
+func (w *Window) Clipboard() Clipboard { return Clipboard{hwnd: w.hwnd} }
 
 // App is what Run needs (*flexui.App satisfies it).
 type App interface {

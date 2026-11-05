@@ -64,7 +64,7 @@ func outerOf(outer []text.Style, inInline bool) []text.Style {
 
 // textStyle is the layout part of a computed style.
 func textStyle(st *style.Style) text.Style {
-	return text.Style{Weight: int(st.FontWeight), Size: st.FontSize, LineHeight: st.LineHeight}
+	return text.Style{Weight: int(st.FontWeight), Size: st.FontSize, LineHeight: st.LineHeight, Lang: st.Lang}
 }
 
 // inlineBox makes the anonymous box for a group of text nodes and inline
@@ -81,11 +81,12 @@ func (d *Document) inlineBox(c *style.Cascade, group []*dom.Node, parent *style.
 	b := &Box{Style: st}
 	var runs []text.Run
 	var outer []text.Style // styles of the enclosing inline boxes
-	var collect func(nodes []*dom.Node, owner *Box, ost *style.Style)
-	collect = func(nodes []*dom.Node, owner *Box, ost *style.Style) {
+	isoID := 0             // isolates (inline elements with dir) in this paragraph
+	var collect func(nodes []*dom.Node, owner *Box, ost *style.Style, ots text.Style)
+	collect = func(nodes []*dom.Node, owner *Box, ost *style.Style, ots text.Style) {
 		for _, n := range nodes {
 			if n.Kind == dom.TextNode {
-				runs = append(runs, text.Run{Text: n.Text, Style: textStyle(ost), Outer: outerOf(outer, owner != nil)})
+				runs = append(runs, text.Run{Text: n.Text, Style: ots, Outer: outerOf(outer, owner != nil)})
 				b.runOwner = append(b.runOwner, owner)
 				continue
 			}
@@ -98,13 +99,18 @@ func (d *Document) inlineBox(c *style.Cascade, group []*dom.Node, parent *style.
 			d.checkInline(ib)
 			b.inlines = append(b.inlines, ib)
 			if n.Tag() == "br" {
-				runs = append(runs, text.Run{Break: true, Style: textStyle(est), Outer: outerOf(append(outer, textStyle(ost)), owner != nil)})
+				runs = append(runs, text.Run{Break: true, Style: textStyle(est), Outer: outerOf(append(outer, ots), owner != nil)})
 				b.runOwner = append(b.runOwner, ib)
 			} else {
 				if owner != nil {
-					outer = append(outer, textStyle(ost))
+					outer = append(outer, ots)
 				}
-				collect(n.Children, ib, &ib.Style)
+				ets := textStyle(&ib.Style)
+				if ib.Style.Isolate != style.IsolateNone {
+					isoID++
+					ets.IsoID, ets.IsoDir = isoID, uint8(ib.Style.Isolate)
+				}
+				collect(n.Children, ib, &ib.Style, ets)
 				if owner != nil {
 					outer = outer[:len(outer)-1]
 				}
@@ -112,10 +118,11 @@ func (d *Document) inlineBox(c *style.Cascade, group []*dom.Node, parent *style.
 			ib.last = len(runs)
 		}
 	}
-	collect(group, nil, &b.Style)
+	collect(group, nil, &b.Style, textStyle(&b.Style))
 	p := text.Params{
 		Style:      textStyle(&st),
-		WhiteSpace: st.WhiteSpace, Align: st.TextAlign,
+		WhiteSpace: st.WhiteSpace, Align: st.TextAlign.Physical(st.Direction),
+		RTL:      st.Direction == style.DirectionRTL,
 		Ellipsis: st.TextOverflow == style.TextOverflowEllipsis,
 	}
 	t := d.cache.text(runs, p)
@@ -180,10 +187,11 @@ func (b *Box) placeInline() {
 			if fs >= fe && !(s == e && s >= ln.Start && s <= ln.FullEnd && ib.El.Tag() != "br") {
 				continue
 			}
-			x0, x1 := t.X(ln, fs), t.X(ln, max(fs, fe))
-			r := geom.Rect{X: b.Abs.X + x0, Y: b.Abs.Y + ln.Baseline - asc, W: x1 - x0, H: asc + desc}
-			ib.Frags = append(ib.Frags, r)
-			u = union(u, r, len(ib.Frags) == 1)
+			for _, sp := range t.Spans(ln, fs, fe) {
+				r := geom.Rect{X: b.Abs.X + sp[0], Y: b.Abs.Y + ln.Baseline - asc, W: sp[1] - sp[0], H: asc + desc}
+				ib.Frags = append(ib.Frags, r)
+				u = union(u, r, len(ib.Frags) == 1)
+			}
 		}
 		ib.Abs = u
 	}
@@ -217,6 +225,7 @@ func (b *Box) paintText(c paint.Canvas) {
 	var gs []text.PlacedGlyph
 	var run *paint.GlyphRun
 	cur := -2
+	var curFace *text.Face
 	flush := func() {
 		if run != nil && len(run.Glyphs) > 0 && run.Color.A > 0 {
 			c.Glyphs(run)
@@ -226,21 +235,20 @@ func (b *Box) paintText(c paint.Canvas) {
 	for i := range blk.Lines {
 		gs = t.Glyphs(&blk.Lines[i], gs[:0])
 		for _, g := range gs {
-			if g.Run != cur || run == nil {
+			if g.Run != cur || g.Face != curFace || run == nil {
 				flush()
-				cur = g.Run
-				var f *text.Face
+				cur, curFace = g.Run, g.Face
 				var size geom.Unit
 				col := b.Style.Color
 				if g.Run < 0 {
-					f, size = t.StrutFace()
+					_, size = t.StrutFace()
 				} else {
-					f, size = t.RunFace(g.Run)
+					_, size = t.RunFace(g.Run)
 					if o := b.runOwner[g.Run]; o != nil {
 						col = o.Style.Color
 					}
 				}
-				run = &paint.GlyphRun{Font: f, Size: size, Color: color(col)}
+				run = &paint.GlyphRun{Font: g.Face, Size: size, Color: color(col)}
 			}
 			run.Glyphs = append(run.Glyphs, paint.Glyph{ID: g.ID, X: b.Abs.X + g.X, Y: b.Abs.Y + g.Y})
 		}
@@ -263,9 +271,14 @@ func textKey(runs []text.Run, p text.Params) string {
 		k.WriteString(strconv.Itoa(int(s.LineHeight.Kind)))
 		k.WriteByte(',')
 		k.WriteString(strconv.FormatInt(int64(s.LineHeight.V), 10))
+		k.WriteByte(',')
+		k.WriteString(strconv.Quote(s.Lang))
+		if s.IsoID > 0 {
+			k.WriteString("," + strconv.Itoa(s.IsoID) + "," + strconv.Itoa(int(s.IsoDir)))
+		}
 	}
 	st(p.Style)
-	k.WriteString("|" + strconv.Itoa(int(p.WhiteSpace)) + strconv.Itoa(int(p.Align)) + strconv.FormatBool(p.Ellipsis))
+	k.WriteString("|" + strconv.Itoa(int(p.WhiteSpace)) + strconv.Itoa(int(p.Align)) + strconv.FormatBool(p.Ellipsis) + strconv.FormatBool(p.RTL))
 	for _, r := range runs {
 		k.WriteByte('|')
 		st(r.Style)

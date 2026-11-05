@@ -141,27 +141,33 @@ func (b *Buffer) nextChar(p int) int {
 
 func isWord(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '\'' }
 
+// wordAt reports whether the grapheme cluster [s, e) belongs to a word.
+// It is decided by the cluster's first character, so vowel signs,
+// viramas, combining marks and joiners (which are not letters) count as
+// part of the word they attach to.
+func (b *Buffer) wordAt(s, e int) bool { return s < e && isWord(b.text[s]) }
+
 // PrevWord returns the start of the word before p: skip non-word
-// characters backwards, then word characters (as browsers on all
-// platforms do for Ctrl/Alt+Left).
+// clusters backwards, then word clusters (as browsers on all platforms
+// do for Ctrl/Alt+Left).
 func (b *Buffer) PrevWord(p int) int {
-	for p > 0 && !isWord(b.text[p-1]) {
+	for p > 0 && !b.wordAt(b.prevChar(p), p) {
 		p = b.prevChar(p)
 	}
-	for p > 0 && isWord(b.text[p-1]) {
+	for p > 0 && b.wordAt(b.prevChar(p), p) {
 		p = b.prevChar(p)
 	}
 	return p
 }
 
-// NextWord returns the end of the word after p: skip non-word characters,
-// then word characters (macOS style; also used on other platforms).
+// NextWord returns the end of the word after p: skip non-word clusters,
+// then word clusters (macOS style; also used on other platforms).
 func (b *Buffer) NextWord(p int) int {
 	n := len(b.text)
-	for p < n && !isWord(b.text[p]) {
+	for p < n && !b.wordAt(p, b.nextChar(p)) {
 		p = b.nextChar(p)
 	}
-	for p < n && isWord(b.text[p]) {
+	for p < n && b.wordAt(p, b.nextChar(p)) {
 		p = b.nextChar(p)
 	}
 	return p
@@ -216,11 +222,20 @@ func (b *Buffer) Move(forward bool, u Unit, extend bool) {
 }
 
 // Delete deletes the selection, or else from the caret one unit backward
-// (Backspace) or forward (Delete). It reports whether the text changed.
+// (Backspace) or forward (Delete). Backspace by Char removes one code
+// point unless the cluster is an emoji sequence; Delete removes a whole
+// grapheme cluster (both as Chromium). It reports whether the text
+// changed.
 func (b *Buffer) Delete(forward bool, u Unit) bool {
 	s, e := b.Selection()
 	if s == e {
 		t := b.target(b.Caret, forward, u)
+		if !forward && u == Char && t < b.Caret && !emojiCluster(b.text[t:b.Caret]) {
+			// Backspace removes one code point of a cluster (a vowel
+			// sign, a combining accent), as browsers do; emoji sequences
+			// (ZWJ, flags, skin tones, keycaps) go as a whole.
+			t = b.Caret - 1
+		}
 		s, e = min(b.Caret, t), max(b.Caret, t)
 		if s == e {
 			return false
@@ -228,8 +243,34 @@ func (b *Buffer) Delete(forward bool, u Unit) bool {
 	}
 	b.text = append(b.text[:s:s], b.text[e:]...)
 	b.reindex()
-	b.Caret, b.Anchor = s, s
+	b.Caret, b.Anchor = b.snap(s), b.snap(s)
 	return true
+}
+
+// emojiCluster reports whether a grapheme cluster is an emoji sequence,
+// which Backspace deletes whole (Chromium's BackspaceStateMachine):
+// regional-indicator flags, emoji modifiers (skin tones), variation
+// selector 16, keycaps, tag sequences, or a zero-width joiner next to a
+// pictograph. Other clusters lose one code point per Backspace.
+func emojiCluster(c []rune) bool {
+	if len(c) < 2 {
+		return false
+	}
+	zwj, pict := false, false
+	for _, r := range c {
+		switch {
+		case r >= 0x1F1E6 && r <= 0x1F1FF, // regional indicators
+			r >= 0x1F3FB && r <= 0x1F3FF, // emoji modifiers
+			r == 0xFE0F, r == 0x20E3,     // VS16, combining keycap
+			r >= 0xE0020 && r <= 0xE007F: // tags
+			return true
+		case r == 0x200D:
+			zwj = true
+		case r >= 0x1F000 || r >= 0x2600 && r <= 0x27BF:
+			pict = true
+		}
+	}
+	return zwj && pict
 }
 
 // SetCaret puts the caret at p (snapped to a grapheme boundary); with
@@ -243,3 +284,17 @@ func (b *Buffer) SetCaret(p int, extend bool) {
 
 // Boundaries returns the grapheme cluster boundaries (for hit testing).
 func (b *Buffer) Boundaries() []int { return b.bounds }
+
+// Replace replaces runes [s, e) with str (sanitized) without moving the
+// selection logic (the caller sets the caret) and returns the number of
+// runes inserted. It is used for IME marked text.
+func (b *Buffer) Replace(s, e int, str string) int {
+	ins := []rune(sanitize(str))
+	s, e = max(0, min(s, len(b.text))), max(0, min(e, len(b.text)))
+	t := make([]rune, 0, len(b.text)-(e-s)+len(ins))
+	t = append(append(append(t, b.text[:s]...), ins...), b.text[e:]...)
+	b.text = t
+	b.reindex()
+	b.Caret, b.Anchor = min(b.Caret, len(t)), min(b.Anchor, len(t))
+	return len(ins)
+}

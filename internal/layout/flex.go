@@ -278,6 +278,9 @@ func (n *Node) flex(in input) geom.Size {
 			mode = contentMode(st.AlignContent)
 		}
 		pos := geom.Unit(0)
+		// The overflow fallback of align-content (safe: the writing-mode
+		// start) is opposite the cross start exactly with wrap-reverse;
+		// direction moves both.
 		for li := range lines {
 			lines[li].offset = pos + spaceBefore(mode, free, li, len(lines), st.FlexWrap == style.WrapReverse)
 			pos += lines[li].cross + gapCross
@@ -322,7 +325,8 @@ func (n *Node) flex(in input) geom.Size {
 
 	// §9.5 main-axis alignment.
 	for _, ln := range lines {
-		justifyLine(items[ln.start:ln.end], innerMain, gapMain, st.JustifyContent, st.FlexDirection.IsReverse())
+		justifyLine(items[ln.start:ln.end], innerMain, gapMain, st.JustifyContent, mainRev(st),
+			st.FlexDirection.IsRow() && st.Direction == style.DirectionRTL)
 	}
 
 	out := geom.Size{W: size[0].V, H: size[1].V}
@@ -337,8 +341,8 @@ func (n *Node) flex(in input) geom.Size {
 		b.border[style.Left] + b.padding[style.Left],
 		b.border[style.Top] + b.padding[style.Top],
 	}
-	reverse := st.FlexDirection.IsReverse()
-	wrapRev := st.FlexWrap == style.WrapReverse
+	reverse := mainRev(st)
+	wrapRev := crossRev(st)
 	for i := range items {
 		it := &items[i]
 		var pos, sz [2]geom.Unit
@@ -353,7 +357,7 @@ func (n *Node) flex(in input) geom.Size {
 		var margin [4]geom.Unit
 		margin[it.sMS], margin[it.sME] = it.mS, it.mE
 		margin[it.sCS], margin[it.sCE] = it.cS, it.cE
-		dx, dy := relativeOffset(it.n.Style, pct)
+		dx, dy := relativeOffset(it.n.Style, pct, st.Direction == style.DirectionRTL)
 		var def [2]bool
 		def[m], def[c] = it.mainDefinite, it.crossDefinite
 		it.n.Box = Box{
@@ -437,10 +441,10 @@ func (n *Node) newItem(ch *Node, m, c int, wrap bool, inner, pct [2]Opt, avail [
 
 	it.sMS, it.sME = axisSides(m)
 	it.sCS, it.sCE = axisSides(c)
-	if st.FlexDirection.IsReverse() {
+	if mainRev(st) {
 		it.sMS, it.sME = it.sME, it.sMS
 	}
-	if st.FlexWrap == style.WrapReverse {
+	if crossRev(st) {
 		it.sCS, it.sCE = it.sCE, it.sCS
 	}
 	it.mS, it.mE = it.b.margin[it.sMS], it.b.margin[it.sME]
@@ -743,7 +747,9 @@ func abs(v geom.Unit) geom.Unit {
 
 // justifyLine resolves main-axis auto margins and justify-content (§9.5),
 // setting mainPos (forward coordinates) for each item.
-func justifyLine(items []flexItem, innerMain, gap geom.Unit, j style.Justify, reverse bool) {
+// rtlRow: a row in a right-to-left container, whose writing-mode start
+// (the overflow fallback of space-around/evenly) is the right edge.
+func justifyLine(items []flexItem, innerMain, gap geom.Unit, j style.Justify, reverse, rtlRow bool) {
 	if len(items) == 0 {
 		return
 	}
@@ -783,7 +789,7 @@ func justifyLine(items []flexItem, innerMain, gap geom.Unit, j style.Justify, re
 		pos := geom.Unit(0)
 		for i := range items {
 			it := &items[i]
-			it.mainPos = pos + spaceBefore(mode, free, i, len(items), false) + it.mS
+			it.mainPos = pos + spaceBefore(mode, free, i, len(items), rtlRow) + it.mS
 			pos += it.outerTarget() + gap
 		}
 		return
@@ -797,6 +803,9 @@ func justifyLine(items []flexItem, innerMain, gap geom.Unit, j style.Justify, re
 		mode = distEnd // flex-start = physical end
 	case free < 0 && (mode == distAround || mode == distEvenly):
 		mode = distStart // safe fallback: writing-mode start
+		if rtlRow {
+			mode = distEnd
+		}
 	default:
 		mode = flipMode(mode)
 	}
@@ -926,4 +935,19 @@ func zeroBoxes(n *Node) {
 	for _, c := range n.Children {
 		zeroBoxes(c)
 	}
+}
+
+// mainRev reports whether the main axis runs against the physical axis:
+// row-reverse and column-reverse, and a row in a right-to-left container
+// (its main start is the right edge; row-reverse there runs left to
+// right).
+func mainRev(st *style.Style) bool {
+	return st.FlexDirection.IsReverse() != (st.FlexDirection.IsRow() && st.Direction == style.DirectionRTL)
+}
+
+// crossRev reports whether the cross axis runs against the physical
+// axis: wrap-reverse, and a column in a right-to-left container (its
+// cross start is the right edge).
+func crossRev(st *style.Style) bool {
+	return (st.FlexWrap == style.WrapReverse) != (!st.FlexDirection.IsRow() && st.Direction == style.DirectionRTL)
 }

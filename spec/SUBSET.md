@@ -138,7 +138,8 @@ percentages, the 148 CSS named colors, `transparent`, `currentcolor`;
 | `font-size` | `<len>` in px/rem | `16px` | yes | §7 |
 | `font-weight` | `normal` \| `bold` \| 1..1000 | `400` | yes | §7 |
 | `line-height` | `normal` \| `<number>` \| `<len>` | `normal` | yes | §7 |
-| `text-align` | `left` \| `right` \| `center` | `left` | yes | §7 |
+| `text-align` | `left` \| `right` \| `center` \| `start` \| `end` | `start` | yes | §7; `start`/`end` follow `direction` |
+| `direction` | `ltr` \| `rtl` | `ltr` | yes | §7.6; also set by the `dir` attribute; flips the flex axes (§7.6) |
 | `white-space` | `normal` \| `nowrap` \| `pre` \| `pre-wrap` | `normal` | yes | §7 |
 | `text-overflow` | `clip` \| `ellipsis` | `clip` | no | §7 |
 
@@ -604,41 +605,81 @@ clip. A 1:1 mapping copies source pixels exactly.
   `\n`; a final newline does not start an empty line. Tabs advance to the
   next multiple of 8 space widths from the start of the line.
 * Break opportunities: Unicode line breaking (UAX #14, via
-  `go-text/typesetting/segmenter`), tailored to match Chromium's ICU rules:
-  no break after `/` or `!` directly followed by the next word. Newlines
-  are forced breaks with `pre` and `pre-wrap`. `nowrap` and `pre` never
+  `go-text/typesetting/segmenter`), except between two printable ASCII
+  characters, where Chromium uses its own table instead of ICU
+  (TextBreakIterator's ShouldBreakAfter): flexui uses the same table,
+  measured from Chromium 153 for all 8836 pairs (`internal/text/asciibreak.go`;
+  e.g. no break in `and/or` or `world!x`, a break in `"x"[y]`), and
+  Chromium's rule that `-` before a digit breaks only after a letter or
+  digit (`ABCD-1234`, not `-1`). Newlines are forced breaks with `pre`
+  and `pre-wrap`. `nowrap` and `pre` never
   wrap. A word wider than the line overflows (`overflow-wrap: normal`).
 * Lines are filled greedily: the next word is added if the line, without
-  its trailing spaces, still fits the content width.
+  its trailing spaces, still fits the content width. The fit is measured
+  as Chromium's line breaker does: the pieces before the last one with
+  their rounded-up widths, the last piece with its exact advance rounded
+  to the nearest 1/64 px (so CJK text whose advances are 15.0001 px at
+  15 px fits exactly ten characters in 150 px).
 * Spaces at the end of a line hang (do not count for fitting, alignment or
   intrinsic sizes), except with `pre` (they count) and with `pre-wrap`
   before a forced break or the end of the run, where they only
   **conditionally hang**: they count when they fit (CSS Text 3 §4.1.3).
 * `text-align` offsets each line within the box's content width; centering
   rounds down to 1/64 px. Lines wider than the box start at its left
-  edge.
+  edge. With `center` or `right`, a line that ends at a soft wrap after
+  spaces has them removed and its last piece shaped again without them
+  (Chromium's RemoveTrailingCollapsibleSpace), which drops kerning against
+  the space ("Hello," "x."). If the line then no longer fits, its last
+  word moves to the next line; a single word keeps its kerned width.
 * `text-overflow: ellipsis` (with D24): a line wider than the box is cut at
   the last character boundary for which the content plus `…` (U+2026)
   fits, and `…` is drawn after it.
 
 ### 7.3 Fonts, shaping and metrics
 
-* One family is bundled: **Inter 4.1** Regular and Bold (static TrueType,
+* One family is built in: **Inter 4.1** Regular and Bold (static TrueType,
   SIL Open Font License, `internal/text/fonts/OFL.txt`). System fonts are
   never read. Every `font-family` value uses it (no warning: app CSS often
   lists stacks). `font-weight` above 500 selects Bold, otherwise Regular,
   which is CSS font matching for faces at 400 and 700. No synthetic bold
   or italics.
+* **Font packs** (opt-in Go packages, `fonts/README.md`) add fallback
+  faces: `fonts/tamil` (Noto Sans Tamil), `fonts/devanagari` (Noto Sans
+  Devanagari), `fonts/arabic` (Noto Sans Arabic), `fonts/hebrew` (Noto
+  Sans Hebrew), `fonts/cjk` (Noto Sans SC: Chinese, Japanese kana; a
+  Regular face only, used for bold too; no Korean Hangul). A pack
+  without a Bold face uses its Regular face for every weight. Importing one registers it; the fallback chain is Inter,
+  then the registered packs in a fixed priority order (Tamil,
+  Devanagari, ...), independent of import order. Packs must be
+  registered before the first layout (imports do that).
+* **Itemization** (UAX #24, as Chromium's ScriptRunIterator): the text
+  is split into items of one script; characters of the Common and
+  Inherited scripts (spaces, digits, punctuation, marks, joiners) belong
+  to the item they are in, at the start of a line to the first strong
+  script after them, and a closing paired bracket (Bidi_Paired_Bracket)
+  to the item of its opening bracket. An item is also split at style
+  (size, weight, language) changes, tabs and forced breaks.
+* **Font fallback** (as Chromium's HarfBuzzShaper): an item is shaped
+  with the first face of the chain; each maximal range of clusters that
+  contain a .notdef glyph is shaped again with the next face, and so on.
+  The last face keeps its .notdef glyphs (drawn as boxes).
 * Shaping: HarfBuzz (go-text port) with default features (kerning,
-  ligatures, contextual alternates), script Latin, language `en`,
-  left-to-right. Bidi and complex scripts are not supported. The text is
-  shaped in **font units** (integer advances), so all later steps are
-  exact integer arithmetic.
-* Widths (matching Chromium to 1/64 px): a line's width is its advance
-  sum × size / unitsPerEm rounded **up** to 1/64 px. For min-content, a
-  word's width is measured as Chromium does: both ends are rounded up to
-  1/64 px in the coordinates of its hard line, and the width is their
-  difference.
+  ligatures, contextual alternates), the item's script, and the content
+  language from the inherited `lang` attribute (`en` without one), which
+  selects language forms (e.g. Marathi and Nepali letter shapes in
+  Devanagari). Right-to-left and mixed text: §7.6.
+* Advances are kept in 1/65536 px, scaled as Chromium does on Linux:
+  the face's advance as FreeType computes it (x_scale = FT_DivFix(size in
+  26.6, unitsPerEm); advance = FT_MulDiv(units, x_scale, 64)), plus GPOS
+  adjustments and offsets as HarfBuzz scales them ((v × ((size in 16.16
+  << 16) / unitsPerEm) + 32768) >> 16). For Inter at whole-pixel sizes
+  this is exact.
+* Widths (matching Chromium to 1/64 px): a line's width is the sum, over
+  its pieces (the text of one element between tabs and forced breaks,
+  Chromium's inline items; script changes do not split them), of the
+  piece's advance rounded **up** to 1/64 px. For min-content, a word's
+  width is measured as Chromium does: both ends are rounded up to 1/64 px
+  in the coordinates of its hard line, and the width is their difference.
 * `font-size` is a length in 1/64 px, so sizes like `13.3px` are
   quantized (to 13.296875px).
 * `line-height: normal` is round(ascent) + round(descent) + round(lineGap)
@@ -647,7 +688,10 @@ clip. A 1:1 mapping copies source pixels exactly.
   1/64 px; a length is used as is. The baseline is the line top plus
   round(ascent) plus half the leading, the leading being line height −
   (round(ascent) + round(descent)) and half of it rounded down to a whole
-  pixel.
+  pixel. With `line-height: normal`, every fallback face used on a line
+  also takes part with its own rounded ascent, descent and line height
+  (as in Chromium: a Tamil word makes a 16px line 22px tall, Devanagari
+  23px); with any other line-height only the primary face counts.
 
 ### 7.4 Glyph rendering
 
@@ -669,9 +713,48 @@ clip. A 1:1 mapping copies source pixels exactly.
 |---|---|---|
 | D21 | Glyph anti-aliasing differs from Chromium (FreeType coverage with Skia's luminance-dependent contrast/gamma "preblend"). Glyph positions agree; individual edge pixels differ, by up to about 50 of 255 levels, mean error about 0.3-0.5 levels per text document. | Integer-only own rasterizer; deterministic everywhere. |
 | D22 | Layout is independent of the device scale. Chromium rounds `line-height: normal` metrics in device pixels, so at 2x its lines can be up to 0.5 px (one device pixel) shorter. | Same layout on every display; HiDPI is a paint-time scale only. |
-| D23 | Shaping at a soft line end: Chromium sometimes measures a line that ends at a soft break (typically after "Hello,") about 100 font units wider than its shaped advance; we could not derive when. Lines then differ by under 1 px, and rarely the break moves (6 of 450 random documents). | Rare; under 1 px except for one changed break. |
+| D23 | Shaping at a soft line end. Chromium removes the trailing spaces of a soft-wrapped line that is not aligned to its start side and shapes the end of the line again without them, which drops kerning against the space (e.g. "Hello," or "." followed by a space): this is emulated (§7.2), with Chromium's moving the last word down when the line no longer fits; the line-fit rule of §7.2 (last piece unrounded) fixed one more case. 2 random Latin documents (within 0.5 px) remain, both with `text-overflow: ellipsis` / nowrap or flex items whose width is the text's own; we could not derive those. | Rare; under 0.5 px. |
 | D24 | Text in an element with `text-overflow: ellipsis` and clipping `overflow` ellipsizes (§7.1); in CSS it would not, because the anonymous box does not inherit them. | What authors expect; Chromium comparisons wrap text runs in an equivalent block that takes these properties. |
 | D30 | `em` and `i` are not italic, and `font-style` is not supported: only upright Regular and Bold faces are bundled. | Binary size; add an italic face later. |
+| D32 | Float rounding of text widths: Chromium adds glyph advances as float32 (per shaping run, then per item) before rounding a piece up to 1/64 px. When the exact width is within float32 precision (a few 1/65536 px) above a 1/64 px boundary, Chromium's width is 1/64 px smaller. Only fonts whose scaled advances are not exact in float32 are affected (the Noto packs, units per em 1000); Inter at whole-pixel sizes is exact. Seen in 1 of 150 random multi-script documents. | Emulating float32 summation in Chromium's run order costs more than a 1/64 px difference is worth. |
+| D33 | Bidi residuals not derived: in 7 of 150 random bidi documents, 2 differ by 1/64 px (D32), 2 by about 0.4 px in a line ending in kerned punctuation before a space (the trailing-space reshaping of §7.2 in mixed-direction lines: the same set-up keeps the kerning in one document and drops it in another), 2 have a line 1-2 px taller in Chromium (lines with isolates), and 1 breaks a line at a different place. | The remaining cases did not reduce to a rule after several attempts; all other bidi documents match glyph for glyph. |
+| D34 | CJK punctuation spacing: Chromium trims the spacing of full-width punctuation by default (`text-spacing-trim: normal`: adjacent pairs such as "。「" collapse, an opening bracket at a line start and a closing one at a line end when the line would not fit otherwise become half-width, applied with the font's `halt` feature by language-dependent rules). flexui keeps full-width punctuation, so CJK text with such punctuation is wider and can break elsewhere (`testdata/text/docs/script_cjk_punct.html`). Chinese and Japanese text without such punctuation pairs matches Chromium exactly. | Blink's HanKerning rules are language-dependent; left for later. |
+
+### 7.6 Bidirectional text
+
+* **Direction**: the `direction` property (inherited) and the `dir`
+  attribute (`ltr`, `rtl`, `auto`; a presentational hint, overridden by
+  author CSS). `dir="auto"` is resolved as HTML does: the first strong
+  character in the element's text (skipping descendants with their own
+  `dir`, and digits), `ltr` without one. A block's direction is the base
+  direction of its paragraphs and resolves `text-align: start/end`.
+* **Isolates**: an inline element with a `dir` attribute is a bidi
+  isolate (browsers: `unicode-bidi: isolate`), as if its text were
+  wrapped in LRI or RLI ... PDI. `direction` without `dir` on an inline
+  element has no effect on reordering (`unicode-bidi: normal`), as in
+  browsers. `unicode-bidi`, `<bdi>` and `<bdo>` are not supported.
+* **Algorithm**: UAX #9 (go-text's implementation) per hard line (a
+  forced break separates paragraphs), with the block's direction as the
+  paragraph direction. Items and width pieces are split at level
+  changes; odd levels are shaped right to left. Each line is reordered
+  with rules L1 (trailing white space at the paragraph level) and L2;
+  isolate controls take part as zero-width separators, as in Chromium.
+* **Lines**: alignment as in §7.2 with `start` on the right in
+  right-to-left paragraphs; a line wider than its box overflows on the
+  end side (to the left in right-to-left text). The trailing-space
+  reshaping of §7.2 applies to lines not aligned to their start side.
+  The ellipsis (D24) is drawn at the end side.
+* **Flex layout** in a right-to-left container: a row's main axis runs
+  right to left (`row-reverse` left to right); a column's cross axis
+  starts at the right (`align-items: flex-start` is the right edge;
+  `wrap-reverse` flips it back). The overflow fallback of
+  `justify-content: space-around/evenly` is the writing-mode start (the
+  right). Absolutely positioned boxes with `left`, `right` and `width`
+  ignore `left`; relative positioning with both `left` and `right` uses
+  `right` (CSS 2 §9.4.3, §10.3.7).
+* Verified against Chromium: hand-written documents and 150 seeded random
+  bidi documents (every grapheme's visual position compared), 400 random
+  right-to-left flex layout trees. Exceptions: D32, D33.
 
 ## 8. Interaction (M5, M6)
 
@@ -809,9 +892,10 @@ clip. A 1:1 mapping copies source pixels exactly.
 
   | Key | Action (Shift extends the selection) |
   |---|---|
-  | ArrowLeft / ArrowRight | one grapheme; with Alt or Ctrl one word; with Meta to the line start/end |
+  | ArrowLeft / ArrowRight | one grapheme; with Alt or Ctrl one word; with Meta to the line start/end. Logical movement: Right is forward in a left-to-right input, backward in a right-to-left one (as Chromium; not visual movement through mixed text) |
   | Home / End, ArrowUp / ArrowDown | to the start / end |
-  | Backspace / Delete | the selection, else one grapheme (Alt/Ctrl: word, Meta: to the start/end) |
+  | Backspace | the selection, else one **code point** of the cluster before the caret (a vowel sign, an accent), or the whole cluster for emoji sequences (ZWJ, flags, skin tones, keycaps), as Chromium; Alt/Ctrl: word, Meta: to the start |
+  | Delete | the selection, else one grapheme cluster (Alt/Ctrl: word, Meta: to the end) |
   | Ctrl/Meta + A, C, X, V | select all, copy, cut, paste (`App.SetClipboard`; in-memory by default) |
   | Enter | `change` event if the value changed |
   | Tab | focus traversal (§8.4) |
@@ -831,11 +915,44 @@ clip. A 1:1 mapping copies source pixels exactly.
   empty) on one line, vertically centered and clipped to the content box,
   scrolled horizontally so the caret stays visible. While focused, a
   1px caret in the text color (or a light blue selection highlight).
-* Not supported yet: IME composition (macOS step, M8), undo, double-click
+* **Direction**: an input with `dir="rtl"` (or `direction: rtl`) shows
+  its text right-aligned; text is bidi-reordered (§7.6) in every input;
+  a selection across a direction change is drawn as several rectangles;
+  the caret at the logical start or end of the text is drawn at the
+  line's start or end side. Clusters and Backspace behavior were checked
+  against Chromium for Devanagari, Tamil, Arabic, Hebrew, combining
+  accents and emoji (`internal/edit` TestChromiumEditing).
+* Not supported yet: undo, double-click
   word selection, autoscroll while drag-selecting, `maxlength`,
   `readonly`, password fields. **D31**: the caret does not blink (frames
   are deterministic; a platform may add blinking later).
 
+
+### 8.7 IME composition
+
+Measured in Chromium 153 (`<input>`, CDP `Input.imeSetComposition` and
+`insertText`) and matched:
+
+* Platforms send `EventCompose` (marked text, caret within it),
+  `EventComposeCommit` (final text) and `EventComposeCancel`
+  (`headless.Session.Compose`, `Commit`, `CancelComposition`).
+* The marked text is part of the input's value while composing (it
+  replaces the selection when the composition starts); every update
+  sends an `input` event with `Ctx.Composing` set. The commit replaces
+  the marked text and sends an `input` event (Chromium's last one has
+  `isComposing` set and is followed by `compositionend`; flexui has no
+  composition events for handlers). A cancel removes the marked text.
+* Focus moving away or a pointer press commits the marked text as it is.
+* The marked text is drawn with a 1px underline in the text color.
+* `App.CaretRect()` (`platform.CaretRecter`) gives the focused input's
+  caret rectangle in logical pixels, for the platform's candidate window.
+* Platforms: Windows through IMM32 (`platform/windows/ime_windows.go`),
+  macOS through NSTextInputClient (`platform/darwin/ime_darwin.go`, with
+  assembly for the struct-returning methods). Both are compile-checked
+  only; stage 9 on each OS verifies them (READMEs list the risks).
+* Not supported: per-clause underlines (thick/thin) and the IME's own
+  selection highlight within the marked text; `compositionstart` /
+  `compositionend` handlers.
 ## 5. Verification
 
 Layout behavior is checked against Chromium:

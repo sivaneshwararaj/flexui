@@ -50,8 +50,13 @@ type Style struct {
 
 	// Text properties. Color, Font*, LineHeight, TextAlign and WhiteSpace
 	// inherit; TextOverflow does not. Used from M4 on.
-	Color        Color
-	FontFamily   string // raw comma-separated list, case preserved
+	Color      Color
+	FontFamily string // raw comma-separated list, case preserved
+	Lang       string // content language: the inherited lang attribute (not a CSS property)
+	Direction  Direction
+	// Isolate is set by the dir attribute (not inherited): on an inline
+	// element it makes a bidi isolate (unicode-bidi: isolate in browsers).
+	Isolate      Isolate
 	FontSize     geom.Unit
 	FontWeight   int16 // 100..900
 	LineHeight   LineHeight
@@ -90,6 +95,37 @@ const (
 	TextAlignLeft TextAlign = iota
 	TextAlignRight
 	TextAlignCenter
+	TextAlignStart // initial: left in ltr, right in rtl
+	TextAlignEnd
+)
+
+// Physical resolves start and end against a direction.
+func (a TextAlign) Physical(d Direction) TextAlign {
+	switch {
+	case a == TextAlignStart && d == DirectionRTL, a == TextAlignEnd && d != DirectionRTL:
+		return TextAlignRight
+	case a == TextAlignStart, a == TextAlignEnd:
+		return TextAlignLeft
+	}
+	return a
+}
+
+// Isolate is the dir attribute of an element: none, ltr or rtl (auto is
+// resolved to ltr or rtl from the element's text).
+type Isolate uint8
+
+const (
+	IsolateNone Isolate = iota
+	IsolateLTR
+	IsolateRTL
+)
+
+// Direction is the `direction` property (also set by the dir attribute).
+type Direction uint8
+
+const (
+	DirectionLTR Direction = iota
+	DirectionRTL
 )
 
 // WhiteSpace is the `white-space` property.
@@ -118,6 +154,8 @@ func Inherit(parent *Style) Style {
 	if parent != nil {
 		s.Color = parent.Color
 		s.FontFamily = parent.FontFamily
+		s.Lang = parent.Lang
+		s.Direction = parent.Direction
 		s.FontSize = parent.FontSize
 		s.FontWeight = parent.FontWeight
 		s.LineHeight = parent.LineHeight
@@ -161,6 +199,7 @@ func Initial() Style {
 		Color:              Color{0, 0, 0, 255},
 		FontSize:           geom.Px(16),
 		FontWeight:         400,
+		TextAlign:          TextAlignStart,
 	}
 }
 

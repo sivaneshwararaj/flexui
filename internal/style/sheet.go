@@ -8,6 +8,20 @@ import (
 )
 
 // Element is what selector matching needs from a document node.
+// Langer is implemented by elements that can carry a lang attribute; the
+// content language it gives is inherited like a property (HTML §3.2.6.2).
+type Langer interface {
+	Lang() (string, bool)
+}
+
+// Direr is implemented by elements that can carry a dir attribute
+// ("ltr", "rtl", or "auto" resolved from the element's text as
+// "auto-ltr" / "auto-rtl"), which sets direction like a presentational
+// hint (author rules override it) and makes the element a bidi isolate.
+type Direr interface {
+	Dir() string
+}
+
 type Element interface {
 	Tag() string // lower-case
 	ID() string
@@ -373,6 +387,19 @@ func NewCascade(sheets ...*Sheet) *Cascade {
 // (sheet warnings are reported once by ParseSheet).
 func (c *Cascade) Compute(el Element, parent *Style, inline string) (Style, []Warning) {
 	s := Inherit(parent)
+	if l, ok := el.(Langer); ok {
+		if v, ok := l.Lang(); ok {
+			s.Lang = strings.TrimSpace(v)
+		}
+	}
+	if d, ok := el.(Direr); ok {
+		switch strings.ToLower(strings.TrimSpace(d.Dir())) {
+		case "ltr", "auto-ltr": // auto: resolved from the text by the element
+			s.Direction, s.Isolate = DirectionLTR, IsolateLTR
+		case "rtl", "auto-rtl":
+			s.Direction, s.Isolate = DirectionRTL, IsolateRTL
+		}
+	}
 	var matched []*Rule
 	for i := range c.rules {
 		if c.rules[i].Sel.Matches(el) {

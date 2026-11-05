@@ -499,7 +499,9 @@ func (s *Style) Apply(d Declaration, ctx Context) *Warning {
 		s.LineHeight = LineHeight{LineHeightLength, l.V}
 	case "text-align":
 		return keyword(map[string]uint8{"left": uint8(TextAlignLeft), "right": uint8(TextAlignRight),
-			"center": uint8(TextAlignCenter)}, (*uint8)(&s.TextAlign))
+			"center": uint8(TextAlignCenter), "start": uint8(TextAlignStart), "end": uint8(TextAlignEnd)}, (*uint8)(&s.TextAlign))
+	case "direction":
+		return keyword(map[string]uint8{"ltr": uint8(DirectionLTR), "rtl": uint8(DirectionRTL)}, (*uint8)(&s.Direction))
 	case "white-space":
 		return keyword(map[string]uint8{"normal": uint8(WhiteSpaceNormal), "nowrap": uint8(WhiteSpaceNowrap),
 			"pre": uint8(WhiteSpacePre), "pre-wrap": uint8(WhiteSpacePreWrap)}, (*uint8)(&s.WhiteSpace))
