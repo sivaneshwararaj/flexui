@@ -939,6 +939,10 @@ Measured in Chromium 153 (`<input>`, CDP `Input.imeSetComposition` and
 * The marked text is drawn with a 1px underline in the text color.
 * `App.CaretRect()` (`platform.CaretRecter`) gives the focused input's
   caret rectangle in logical pixels, for the platform's candidate window.
+* Platforms: Windows through IMM32 (`platform/windows/ime_windows.go`),
+  macOS through NSTextInputClient (`platform/darwin/ime_darwin.go`, with
+  assembly for the struct-returning methods). Both are compile-checked
+  only; stage 9 on each OS verifies them (READMEs list the risks).
 * Not supported: per-clause underlines (thick/thin) and the IME's own
   selection highlight within the marked text; `compositionstart` /
   `compositionend` handlers.

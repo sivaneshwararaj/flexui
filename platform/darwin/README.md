@@ -15,6 +15,7 @@ silicon, macOS 27.2, build 26B123, Retina, scale 2):
 | 6 | Pass for typing: text appears in both fields, the caret moves, "Echo" mirrors the first field, and leaving it printed `RESULT: change name = "see"`; the window resized cleanly. Clipboard (Cmd+C/V across apps) and Option/Cmd caret moves were not explicitly reported. |
 | 7 | Pass: `darwin.Run(app)`; the count reached 80 with the note shown. |
 | 8 | Not run yet (multilingual clipboard round trip). |
+| 9 | Not run yet (IME composition). |
 
 Everything not in a "Pass" line above (the system clipboard, Option/Cmd
 caret movement, moves between displays of different scale, amd64 Macs)
@@ -63,6 +64,7 @@ something fails.
 | 6 | `go run ./platform/darwin/stages/stage6` | Typing into inputs, caret and selection keys (Option = word, Command = line), Cmd+A/C/X/V with the system clipboard, `RESULT: change` when leaving a field. |
 | 7 | `go run ./platform/darwin/stages/stage7` | The public entry point `darwin.Run(app)` with a complete small app. |
 | 8 | `go run ./platform/darwin/stages/stage8` | Multilingual clipboard: 13 strings (Tamil, Hindi, Arabic, Hebrew, mixed, combining marks, emoji, joiners) written to and read back from the system clipboard, byte-identical (UTF-8 via `NSString` (`public.utf8-plain-text`)); the Tamil sample left on the clipboard pastes intact into TextEdit; text copied in another app and pasted into the field is printed as code points. Missing Tamil glyphs in the window are expected until the font work lands. |
+| 9 | `go run ./platform/darwin/stages/stage9` | IME composition through NSTextInputClient (`ime_darwin.go`): typing goes through `interpretKeyEvents:`; `setMarkedText:selectedRange:replacementRange:` → `EventCompose`, `insertText:replacementRange:` → commit (or plain text), `unmarkText` → commit; `markedRange`, `selectedRange` and `firstRectForCharacterRange:actualRange:` return structs, which purego callbacks cannot, so they are Go assembly (`ime_darwin_arm64.s`, `ime_darwin_amd64.s`) returning values the Go side keeps updated. RESULT lines for every compose/commit/cancel and input event, plus the caret rectangle. |
 
 Runnable examples: `cd examples && go run ./counter -window`, and the demo
 app (list, form, modal): `cd examples && go run ./demo -window`. The demo's
@@ -77,6 +79,25 @@ go test ./...
 ```
 
 ## Untested parts and specific risks
+
+### Stage 9 (IME) risks, all untested
+
+* The assembly method implementations: register use and struct-return
+  conventions (arm64: X0/X1 and F0-F3; x86_64: AX/DX and a hidden result
+  pointer in DI for NSRect) are written from the ABI documents, not run.
+  A mistake here crashes the process when the input method asks for the
+  marked range or the caret rectangle.
+* `objc.GetProtocol("NSTextInputClient")` may return nil (then the view
+  does not declare the protocol and AppKit may not create an input
+  context; `-debug` logs it).
+* NSRange arguments taken as two uint64 (fine for arm64 and x86_64
+  calling conventions; `replacementRange` is ignored).
+* `interpretKeyEvents:` now handles all typing (previously characters were
+  read from the key event): dead keys and Option-characters should work
+  better, but plain typing is untested on a Mac after this change.
+* `attributedSubstringForProposedRange:` returns nil and
+  `characterIndexForPoint:` NSNotFound: some input methods (e.g. Chinese
+  with reconversion) may want the document's text.
 
 Stages 1-5 and 7 confirm window creation, presentation, Retina scale,
 pointer clicks, scrolling and keyboard focus on Apple silicon. Still

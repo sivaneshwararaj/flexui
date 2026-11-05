@@ -42,6 +42,7 @@ type Window struct {
 	scale     float64 // backing scale factor
 	frames    int
 	redrawing bool
+	marked    string // the IME's marked text (NSTextInputClient)
 	// OnFrame, if set, is called after each presented frame (stages use
 	// it to report what was drawn).
 	OnFrame func(img *image.RGBA, w, h int, scale float64)
@@ -65,7 +66,7 @@ func registerClasses() error {
 			}
 		}}
 	}
-	_, err := objc.RegisterClass("FlexUIView", objc.GetClass("NSView"), nil, nil, []objc.MethodDef{
+	viewClass, err := objc.RegisterClass("FlexUIView", objc.GetClass("NSView"), nil, nil, []objc.MethodDef{
 		{Cmd: sel("isFlipped"), Fn: func(objc.ID, objc.SEL) bool { return true }},
 		{Cmd: sel("acceptsFirstResponder"), Fn: func(objc.ID, objc.SEL) bool { return true }},
 		{Cmd: sel("acceptsFirstMouse:"), Fn: func(objc.ID, objc.SEL, objc.ID) bool { return true }},
@@ -86,6 +87,9 @@ func registerClasses() error {
 	})
 	if err != nil {
 		return fmt.Errorf("darwin: FlexUIView: %w", err)
+	}
+	if err := addTextInputClient(viewClass); err != nil {
+		return err
 	}
 	_, err = objc.RegisterClass("FlexUIWindowDelegate", objc.GetClass("NSObject"), nil, nil, []objc.MethodDef{
 		{Cmd: sel("windowDidResize:"), Fn: func(objc.ID, objc.SEL, objc.ID) {
@@ -259,14 +263,22 @@ func (w *Window) key(e objc.ID, down bool) {
 	if down {
 		kind = platform.EventKeyDown
 	}
+	if down && w.marked != "" {
+		// During an IME composition the input method gets every key
+		// (arrows, Enter and Escape act on the marked text).
+		debugf("key during composition: interpretKeyEvents")
+		w.view.Send(sel("interpretKeyEvents:"), class("NSArray").Send(sel("arrayWithObject:"), e))
+		w.render()
+		return
+	}
 	w.app.Event(platform.Event{Kind: kind, Key: name, Mods: m})
 	debugf("key %v code %#x name %q mods %#x", kind, code, name, m)
-	if down && m&(platform.ModCtrl|platform.ModMeta) == 0 && (!special || name == " ") {
-		// Committed text (no IME composition yet; see README).
-		if text := goString(e.Send(sel("characters"))); text != "" {
-			w.app.Event(platform.Event{Kind: platform.EventText, Text: text})
-			debugf("text %q", text)
-		}
+	if down && m&(platform.ModCtrl|platform.ModMeta) == 0 {
+		// Text goes through the input system: insertText: for committed
+		// text (also plain typing and dead keys), setMarkedText: for an
+		// IME composition (ime_darwin.go). Commands such as deleteBackward:
+		// are ignored (the key event above handled them).
+		w.view.Send(sel("interpretKeyEvents:"), class("NSArray").Send(sel("arrayWithObject:"), e))
 	}
 	w.render()
 }

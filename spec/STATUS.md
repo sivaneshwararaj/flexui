@@ -1,8 +1,18 @@
 # Status
 
-Last updated after step 8 of the multilingual work (IME composition
-model, headless). Next steps: IME on macOS and Windows (step 9, staged),
-CJK (step 10).
+Last updated after step 9 of the multilingual work (IME on macOS and
+Windows, staged, not run). Next step: CJK font pack and line breaking
+(step 10).
+
+### IME on the platforms (step 9)
+
+* Windows: IMM32 messages, composition window hidden, candidate window
+  at the caret. macOS: NSTextInputClient with three methods in Go
+  assembly (struct returns). Both compile for all targets; **neither has
+  run**. Stage 9 (`go run ./platform/<darwin|windows>/stages/stage9`)
+  prints RESULT lines; the READMEs list what is untested and the risks.
+* macOS typing now goes through `interpretKeyEvents:` (also for plain
+  text): re-run stage 6 on a Mac to confirm typing still works.
 
 ### IME composition (step 8)
 
@@ -11,7 +21,7 @@ CJK (step 10).
   query, commit on blur/press; headless test replaying the Chromium
   session (`TestComposition`, `testdata/multilingual/ime_*.png`).
 * Not done: clause underlines, IME selection highlight, composition
-  event handlers; the platforms do not send these events yet (step 9).
+  event handlers.
 
 ### Editing (step 7)
 

@@ -93,6 +93,12 @@ func Load() error {
 		}
 		debugf("resolved %s at %#x", p.Name, p.Addr())
 	}
+	for _, p := range imeProcs {
+		if err := p.Find(); err != nil {
+			return fmt.Errorf("windows: %w", err)
+		}
+		debugf("resolved %s at %#x", p.Name, p.Addr())
+	}
 	return nil
 }
 

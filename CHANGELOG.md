@@ -6,6 +6,10 @@ versioning with `v0.x` tags until the API settles.
 ## Unreleased
 
 ### Added
+- IME on Windows (IMM32) and macOS (NSTextInputClient; struct-returning
+  methods in Go assembly since purego callbacks cannot return structs),
+  with stage 9 on each OS. Compile-checked only; not yet run. On macOS
+  all typing now goes through `interpretKeyEvents:`.
 - IME composition model: `platform.EventCompose`, `EventComposeCommit`,
   `EventComposeCancel`, `platform.CaretRecter` / `App.CaretRect`,
   `Ctx.Composing`, headless `Compose`/`Commit`/`CancelComposition`;

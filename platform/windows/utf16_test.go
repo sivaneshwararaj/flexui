@@ -53,3 +53,14 @@ func TestClipTextSurrogates(t *testing.T) {
 		t.Error("NUL accepted")
 	}
 }
+
+func TestIMEText(t *testing.T) {
+	u, _ := encodeClipText("かん字👍x")
+	u = u[:len(u)-1] // no terminator from ImmGetCompositionStringW
+	for _, c := range []struct{ cursor, want int }{{0, 0}, {2, 2}, {3, 3}, {5, 4}, {6, 5}, {99, 5}} {
+		s, r := imeText(u, c.cursor)
+		if s != "かん字👍x" || r != c.want {
+			t.Errorf("cursor %d: %q rune %d, want %d", c.cursor, s, r, c.want)
+		}
+	}
+}

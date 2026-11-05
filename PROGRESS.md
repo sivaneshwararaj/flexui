@@ -30,34 +30,34 @@ machine (local Claude Code or a cloud session). Read it first, then
 | 6. Bidi (UAX #9), `dir`/`direction`, RTL alignment, Arabic/Hebrew packs | done (spec/SUBSET.md §7.6; D33 lists the residuals) |
 | 7. Cluster-aware caret/selection/backspace, bidi movement | done (logical movement as Chromium; see spec/STATUS.md) |
 | 8. IME composition events + caret rect (headless) | done (spec/SUBSET.md §8.7) |
-| 9. IME on macOS (NSTextInputClient) and Windows (IMM32), staged | **next** |
-| 10. CJK font pack (opt-in) + UAX #14 for ideographs | not started |
+| 9. IME on macOS (NSTextInputClient) and Windows (IMM32), staged | done, compile-checked only; user to run stage 9 on both OSes (and stage 6 again on macOS) |
+| 10. CJK font pack (opt-in) + UAX #14 for ideographs | **next** |
 | `testdata/multilingual` (Tamil, Hindi, mixed, Arabic, Hebrew, bidi mixed done; long paragraphs and CJK to add) | partly |
 | Final summary to the user (changed / unverified / weakest) | at the end |
 
-Waiting on the user: stage 8 (multilingual clipboard) on macOS and
-Windows: `go run ./platform/<darwin|windows>/stages/stage8`.
+Waiting on the user (run on each OS, send the RESULT lines):
+`go run ./platform/<darwin|windows>/stages/stage8` (multilingual
+clipboard), `.../stage9` (IME, with a Japanese input method), and on
+macOS `.../stage6` again (typing now goes through interpretKeyEvents).
 
-## Step 9 notes (next)
+## Step 10 notes (next)
 
-* macOS (`platform/darwin`): the view class (FlexUIView, objc via
-  purego) must adopt NSTextInputClient: `insertText:replacementRange:`
-  (commit; also plain typing), `setMarkedText:selectedRange:replacementRange:`
-  (EventCompose; text may be NSAttributedString), `unmarkText`,
-  `hasMarkedText`, `markedRange`, `selectedRange`,
-  `firstRectForCharacterRange:actualRange:` (from App.CaretRect, converted
-  to screen coordinates, y flipped), `validAttributesForMarkedText`,
-  `attributedSubstringForProposedRange:actualRange:` (may return nil),
-  `characterIndexForPoint:`, `doCommandBySelector:`; keyDown must call
-  `interpretKeyEvents:`. Currently keys_darwin.go sends EventText from
-  NSEvent characters.
-* Windows (`platform/windows`): WM_IME_STARTCOMPOSITION /
-  WM_IME_COMPOSITION (GCS_COMPSTR with ImmGetCompositionStringW, GCS_CURSORPOS;
-  GCS_RESULTSTR for commit) / WM_IME_ENDCOMPOSITION; position the
-  candidate window with ImmSetCompositionWindow / ImmSetCandidateWindow
-  from App.CaretRect (physical pixels). imm32.dll via LazyProc.
-* Staged commands stage9 on both OSes with EXPECT/RESULT and -debug;
-  README lists untested parts. Do not claim it works.
+* Font: Noto Sans CJK is large (OTF/CFF ~16 MB per weight; our glyph
+  rasterizer handles cubic outlines). Options: a subset font, or Noto
+  Sans SC/JP/KR TTF variable fonts from notofonts (check size). It must
+  be opt-in (`fonts/cjk` or per-language packs) and loaded in the
+  Chromium harness for the cross-check.
+* Line breaking: UAX #14 already breaks between ideographs (go-text);
+  check against Chromium with Chinese/Japanese text (kinsoku: no break
+  before 、。」 etc.). Japanese `lang` (ja/zh/ko) affects glyph forms via
+  locl in pan-CJK fonts.
+* testdata/multilingual: add CJK page and long paragraphs.
+
+## Step 9 summary (done, untested)
+
+* Windows `platform/windows/ime_windows.go` (IMM32); macOS
+  `platform/darwin/ime_darwin.go` + `ime_darwin_{arm64,amd64}.s`;
+  stage 9 on both (stagekit/ime.go: App9, LogIME). READMEs list risks.
 
 ## Step 8 summary (done)
 

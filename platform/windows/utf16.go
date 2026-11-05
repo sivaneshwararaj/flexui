@@ -33,3 +33,11 @@ func decodeClipText(u []uint16) string {
 	}
 	return string(utf16.Decode(u))
 }
+
+// imeText converts an IME composition string (ImmGetCompositionStringW
+// returns UTF-16 code units, no terminator) and a cursor position in
+// UTF-16 units to text and a rune index.
+func imeText(u []uint16, cursor int) (string, int) {
+	cursor = max(0, min(cursor, len(u)))
+	return string(utf16.Decode(u)), len(utf16.Decode(u[:cursor]))
+}
