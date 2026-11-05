@@ -35,6 +35,7 @@ Implementation (`internal/`, free to change):
 | `internal/paint` | `Canvas` draw interface (incl. `Glyphs` runs over a `GlyphSource`), `List` display list, `Raster` integer-only software rasterizer. | `geom` |
 | `internal/dom` | HTML → node tree (`<body>` root, `<style>` collection); `*dom.Node` implements `style.Element`. | `golang.org/x/net/html`, `style` |
 | `internal/render` | dom → cascade → layout → paint order (stacking contexts) → display list → raster. `Parse`, `Cache.Style` (sheet and text caches), `Document.Layout/Place/Paint/Draw/HitTest`, `Build`, `Render`. | all of the above |
+| `internal/jpeg` | Frozen copy of Go 1.24's JPEG decoder (BSD) + `DecodeRGBA` with integer color conversion, so decoded pixels do not depend on the Go version. | stdlib `image` |
 | `internal/edit` | Single-line text editing model (`Buffer`: graphemes, words, selection). | `go-text/typesetting/segmenter` |
 | `internal/view` | Live document between frames: staged invalidation (parse/style/layout/place/paint), retained frame, hit testing, event dispatch (bubbling) to a handler callback; interaction state (M6). | `render`, `dom` |
 | `internal/text` | Bundled Inter faces and the font pack registry (`Register`, `Chain`), script itemization, fallback shaping, line breaking, `Text` layout (lines, intrinsic widths, ellipsis), glyph rasterizer (`paint.GlyphSource`). | `go-text/typesetting`, `geom`, `style`, `paint` |

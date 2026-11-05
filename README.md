@@ -77,4 +77,6 @@ data (needs node and Playwright). The project's working rules are in
 ## License
 
 MIT ([LICENSE](LICENSE)). The bundled Inter font and the optional Noto
-font packs ([fonts](fonts)) are under the SIL Open Font License.
+font packs ([fonts](fonts)) are under the SIL Open Font License. The
+JPEG decoder in [internal/jpeg](internal/jpeg) is copied from Go 1.24
+and keeps Go's BSD license ([internal/jpeg/LICENSE](internal/jpeg/LICENSE)).

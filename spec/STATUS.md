@@ -16,12 +16,31 @@ stage 6 again on macOS.
 * Line fitting now follows Chromium's breaker for the last piece of a
   line (exact advance), which also fixed two older differing breaks.
 
+### JPEG determinism (2026-11-05)
+
+* Found on the Mac: with Go 1.25+ the standard library's JPEG decoder
+  gives different pixels (new IDCT), so `TestHashes` failed on the
+  `images` document (127 pixels, 1-2 levels) with Go 1.27.1. Fixed with
+  `internal/jpeg` (copy of Go 1.24's decoder). Verified on darwin/arm64:
+  `TestHashes` and `TestGolden` pass with Go 1.24.0 and 1.27.1, goldens
+  unchanged; the copy is byte-identical to Go 1.24's decoder + draw on
+  all 25 test images (baseline, progressive, all subsamplings, restart
+  markers, gray, RGB, CMYK). amd64/386 covered by the Linux gate.
+
 ### IME on the platforms (step 9)
 
+* macOS run by the user: stage 6 (Tamil typing) and stage 8 (13/13
+  clipboard strings, paste from other apps) pass; stage 9 showed correct
+  Japanese and right-to-left Arabic text in the fields but no composition
+  events yet (text arrived committed), so AppKit's input-method path is
+  still unverified. `stage9 -auto` (sends the NSTextInputClient messages
+  itself) passed on arm64 (2026-11-05): arm64 assembly struct returns,
+  marked text, commit, cancel and unmarkText all ok. Not yet run: typing
+  with the Japanese input method (candidate window position) and x86_64.
 * Windows: IMM32 messages, composition window hidden, candidate window
   at the caret. macOS: NSTextInputClient with three methods in Go
-  assembly (struct returns). Both compile for all targets; **neither has
-  run**. Stage 9 (`go run ./platform/<darwin|windows>/stages/stage9`)
+  assembly (struct returns). Both compile for all targets; Windows **has not
+  run**; macOS arm64 passed the `-auto` self-test only. Stage 9 (`go run ./platform/<darwin|windows>/stages/stage9`)
   prints RESULT lines; the READMEs list what is untested and the risks.
 * macOS typing now goes through `interpretKeyEvents:` (also for plain
   text): stage 6 re-run by the user, typing (Tamil keyboard) works; the

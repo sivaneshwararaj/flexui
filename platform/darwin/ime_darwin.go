@@ -3,6 +3,7 @@
 package darwin
 
 import (
+	"fmt"
 	"runtime"
 
 	"github.com/ebitengine/purego/objc"
@@ -165,4 +166,50 @@ func (w *Window) imeState() {
 	r = objc.Send[NSRect](w.win, sel("convertRectToScreen:"), r)
 	imeRect = [4]float64{r.Origin.X, r.Origin.Y, r.Size.Width, r.Size.Height}
 	debugf("caret rect view %.1f,%.1f %.1fx%.1f screen %v", x, y, cw, h, imeRect)
+}
+
+// NSRange is Foundation's NSRange.
+type NSRange struct{ Location, Length uint64 }
+
+// SelfTestIME sends the view the NSTextInputClient messages an input
+// method would (through objc_msgSend, so the assembly methods run as
+// AppKit would call them) and reports each result with logf. The focused
+// element should be a text input. It returns whether every check passed.
+func (w *Window) SelfTestIME(value func() string, logf func(string, ...any)) bool {
+	ok := true
+	check := func(name string, pass bool, got string) {
+		r := "ok"
+		if !pass {
+			r, ok = "FAIL", false
+		}
+		logf("RESULT: self-test %s: %s (%s)", name, r, got)
+	}
+	none := NSRange{nsNotFound, 0}
+	v := w.view
+	v.Send(sel("setMarkedText:selectedRange:replacementRange:"), nsString("かん"), NSRange{2, 0}, none)
+	check("marked text in the value", value() == "かん", value())
+	check("hasMarkedText", objc.Send[bool](v, sel("hasMarkedText")), "")
+	mr := objc.Send[NSRange](v, sel("markedRange"))
+	check("markedRange (assembly)", mr == NSRange{0, 2}, fmt.Sprint(mr))
+	sr := objc.Send[NSRange](v, sel("selectedRange"))
+	check("selectedRange (assembly)", sr == NSRange{2, 0}, fmt.Sprint(sr))
+	actual := NSRange{99, 99}
+	rect := objc.Send[NSRect](v, sel("firstRectForCharacterRange:actualRange:"), NSRange{0, 2}, &actual)
+	frame := objc.Send[NSRect](w.win, sel("frame"))
+	inside := rect.Size.Height > 0 && rect.Origin.X >= frame.Origin.X && rect.Origin.X <= frame.Origin.X+frame.Size.Width &&
+		rect.Origin.Y >= frame.Origin.Y && rect.Origin.Y <= frame.Origin.Y+frame.Size.Height
+	check("firstRectForCharacterRange (assembly) inside the window", inside, fmt.Sprintf("rect %+v window %+v", rect, frame))
+	check("actualRange written", actual == NSRange{0, 2}, fmt.Sprint(actual))
+	v.Send(sel("insertText:replacementRange:"), nsString("漢字"), none)
+	check("commit replaces the marked text", value() == "漢字", value())
+	check("no marked text after commit", !objc.Send[bool](v, sel("hasMarkedText")), "")
+	mr = objc.Send[NSRange](v, sel("markedRange"))
+	check("markedRange is NSNotFound after commit", mr.Location == nsNotFound, fmt.Sprint(mr))
+	v.Send(sel("setMarkedText:selectedRange:replacementRange:"), nsString("x"), NSRange{1, 0}, none)
+	v.Send(sel("setMarkedText:selectedRange:replacementRange:"), nsString(""), NSRange{0, 0}, none)
+	check("cancel removes the marked text", value() == "漢字", value())
+	v.Send(sel("setMarkedText:selectedRange:replacementRange:"), nsString("y"), NSRange{1, 0}, none)
+	v.Send(sel("unmarkText"))
+	check("unmarkText commits the marked text", value() == "漢字y", value())
+	return ok
 }

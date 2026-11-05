@@ -51,8 +51,14 @@ same sheet.
 
 * `<img src>` is a `data:` URL (base64 or percent-encoded) or a path in
   `Options.Assets` (an `io/fs.FS`; a leading `/` is ignored). Other URLs
-  and missing files warn and leave an empty box. PNG and JPEG are decoded
-  with Go's standard library (deterministic, integer).
+  and missing files warn and leave an empty box. PNG is decoded with Go's
+  standard library; JPEG with `internal/jpeg`, a frozen copy of Go 1.24's
+  decoder and color conversion (integer only). The standard library's
+  JPEG output changed in Go 1.25 (new IDCT), so using it would make the
+  pixels depend on the Go toolchain; the copy keeps them identical on
+  every platform and Go version (`internal/jpeg` TestHashes pins 25
+  images; TestMatchesGo124 checks the copy against the original when run
+  with Go 1.24).
 * Natural size: one image pixel per logical pixel. The image is a
   measured leaf with its natural width as min- and max-content, its
   height following the width through the aspect ratio, and its width
