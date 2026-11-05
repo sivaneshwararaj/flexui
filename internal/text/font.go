@@ -42,23 +42,75 @@ func (f *Face) Name() string { return f.name }
 // (github.com/sivaneshwararaj/flexui/fonts/...). Priority orders the
 // fallback chain (lower first), independently of import order. Bold may
 // be nil: bold text then uses the regular face (no synthetic bold).
+//
+// Faces are parsed lazily, each the first time fallback reaches it (a
+// parsed face holds its tables on the heap: about 10 MB for the CJK
+// pack), so importing a pack costs binary size but no memory until text
+// needs it. Parsing is deterministic, so when it happens does not change
+// any output.
 type Pack struct {
 	Name          string
 	Priority      int
 	Regular, Bold []byte
 
-	once          sync.Once
-	regular, bold *Face
+	regOnce, boldOnce sync.Once
+	regular, bold     *Face
+}
+
+// face returns the pack's face for regular or bold text, parsing it on
+// first use.
+func (p *Pack) face(isBold bool) *Face {
+	if isBold && p.Bold != nil {
+		p.boldOnce.Do(func() { p.bold = loadPack(p.Name+"-Bold", p.Bold) })
+		return p.bold
+	}
+	p.regOnce.Do(func() { p.regular = loadPack(p.Name+"-Regular", p.Regular) })
+	return p.regular
+}
+
+func loadPack(name string, data []byte) *Face {
+	f := load(name, data)
+	packMu.Lock()
+	loaded = append(loaded, name)
+	packMu.Unlock()
+	return f
+}
+
+// LoadedPackFaces returns the pack faces parsed so far, in load order
+// (for tests and memory diagnostics).
+func LoadedPackFaces() []string {
+	packMu.Lock()
+	defer packMu.Unlock()
+	return append([]string(nil), loaded...)
+}
+
+// Link is one entry of a fallback chain: a loaded face (Inter) or a
+// pack's face, parsed when Face is first called.
+type Link struct {
+	face   *Face
+	pack   *Pack
+	isBold bool
+}
+
+// Face returns the link's face, parsing a pack face on first use.
+func (l Link) Face() *Face {
+	if l.face != nil {
+		return l.face
+	}
+	return l.pack.face(l.isBold)
 }
 
 var (
 	loadOnce sync.Once
 	regular  *Face
 	bold     *Face
+	// Fallback chains for regular and bold text, built by setup.
+	regularChain, boldChain []Link
 
 	packMu sync.Mutex
 	packs  []*Pack
 	frozen bool
+	loaded []string // pack faces parsed so far (LoadedPackFaces)
 )
 
 // Register adds a fallback font pack. It must be called before any text
@@ -108,17 +160,8 @@ func load(name string, data []byte) *Face {
 	}
 }
 
-func (p *Pack) load() {
-	p.once.Do(func() {
-		p.regular = load(p.Name+"-Regular", p.Regular)
-		p.bold = p.regular
-		if p.Bold != nil {
-			p.bold = load(p.Name+"-Bold", p.Bold)
-		}
-	})
-}
-
-// setup loads Inter and freezes the pack list.
+// setup loads Inter, freezes the pack list and builds the fallback
+// chains (pack faces in them are parsed later, on first use).
 func setup() {
 	loadOnce.Do(func() {
 		regular = load("Inter-Regular", interRegular)
@@ -126,6 +169,12 @@ func setup() {
 		packMu.Lock()
 		frozen = true
 		packMu.Unlock()
+		regularChain = []Link{{face: regular}}
+		boldChain = []Link{{face: bold}}
+		for _, p := range packs {
+			regularChain = append(regularChain, Link{pack: p})
+			boldChain = append(boldChain, Link{pack: p, isBold: true})
+		}
 	})
 }
 
@@ -163,18 +212,14 @@ func ForWeight(weight int) *Face {
 }
 
 // Chain returns the fallback chain for a weight: the primary face, then
-// each registered pack's face of that weight, in priority order.
-func Chain(weight int) []*Face {
-	c := []*Face{ForWeight(weight)}
-	for _, p := range packs { // frozen: no lock needed
-		p.load()
-		if weight > 500 {
-			c = append(c, p.bold)
-		} else {
-			c = append(c, p.regular)
-		}
+// each registered pack's face of that weight, in priority order. The
+// slice is shared: do not modify it.
+func Chain(weight int) []Link {
+	setup()
+	if weight > 500 {
+		return boldChain
 	}
-	return c
+	return regularChain
 }
 
 // Glyph is one shaped glyph; advance and offsets are in 1/65536 px.

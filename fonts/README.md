@@ -3,7 +3,10 @@
 flexui draws text with its built-in Inter (Latin, Greek, Cyrillic).
 Text in other scripts needs a fallback font: import the pack for each
 script your app shows. Each pack embeds a Regular and a Bold face and
-registers them in a fixed fallback order (independent of import order):
+registers them in a fixed fallback order (independent of import order).
+A pack adds binary size, but its faces are parsed (and take memory) only
+when text first falls back to them, so importing a pack an app rarely
+uses is cheap at run time:
 
 | Package | Font | Version | Scripts | Added binary size |
 |---|---|---|---|---|

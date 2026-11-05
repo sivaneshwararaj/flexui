@@ -98,8 +98,8 @@ type Text struct {
 
 type runInfo struct {
 	outer      []runInfo
-	face       *Face   // primary face
-	chain      []*Face // fallback chain, starting with face
+	face       *Face  // primary face
+	chain      []Link // fallback chain, starting with face
 	lang       language.Language
 	size       geom.Unit
 	ascent     geom.Unit // rounded, as used for the baseline
@@ -435,8 +435,8 @@ func (t *Text) shape() {
 // shapeFallback shapes runes [s, e) with chain[0], re-shaping the ranges
 // it has no glyphs for with the rest of the chain. Glyphs are appended in
 // logical (cluster) order.
-func (t *Text) shapeFallback(s, e int, chain []*Face, p shapeProps, size geom.Unit, out []Glyph) []Glyph {
-	gs := chain[0].shape(t.runes, s, e, p, size, nil)
+func (t *Text) shapeFallback(s, e int, chain []Link, p shapeProps, size geom.Unit, out []Glyph) []Glyph {
+	gs := chain[0].Face().shape(t.runes, s, e, p, size, nil)
 	if len(chain) == 1 {
 		return append(out, gs...)
 	}

@@ -657,7 +657,13 @@ clip. A 1:1 mapping copies source pixels exactly.
   without a Bold face uses its Regular face for every weight. Importing one registers it; the fallback chain is Inter,
   then the registered packs in a fixed priority order (Tamil,
   Devanagari, ...), independent of import order. Packs must be
-  registered before the first layout (imports do that).
+  registered before the first layout (imports do that). Each pack face
+  is parsed lazily, the first time fallback reaches it in the chain
+  (bold faces separately), so a pack costs binary size but no memory
+  until text needs it: Latin-only text parses no pack, and the CJK pack
+  (last in the chain, ~10 MB parsed) only for text no earlier face
+  covers. Parsing is deterministic, so its timing changes no output
+  (`internal/render` TestLazyFontPacks).
 * **Itemization** (UAX #24, as Chromium's ScriptRunIterator): the text
   is split into items of one script; characters of the Common and
   Inherited scripts (spaces, digits, punctuation, marks, joiners) belong

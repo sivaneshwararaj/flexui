@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"flag"
+	"image"
+	"image/draw"
 	"image/png"
 	"os"
 	"path/filepath"
@@ -21,7 +23,7 @@ func TestMain(m *testing.M) {
 }
 
 // TestShowcase runs the scripted session, compares every screen with its
-// golden PNG byte for byte (testdata/<step>.png) and checks the computed
+// golden PNG pixel for pixel (testdata/<step>.png) and checks the computed
 // values along the way.
 func TestShowcase(t *testing.T) {
 	sc := NewShowcase()
@@ -87,11 +89,20 @@ func TestShowcase(t *testing.T) {
 			}
 			return
 		}
-		want, err := os.ReadFile(path)
+		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("%v (run with -update)", err)
 		}
-		if !bytes.Equal(want, b.Bytes()) {
+		// Compare pixels, not PNG bytes: Go's PNG/zlib encoder output
+		// differs between Go versions for the same image.
+		m, err := png.Decode(bytes.NewReader(data))
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		want := image.NewRGBA(m.Bounds())
+		draw.Draw(want, want.Rect, m, m.Bounds().Min, draw.Src)
+		got := s.Frame()
+		if !want.Rect.Eq(got.Rect) || !bytes.Equal(want.Pix, got.Pix) {
 			os.MkdirAll(filepath.Join("testdata", "_failed"), 0o755)
 			os.WriteFile(filepath.Join("testdata", "_failed", step+".png"), b.Bytes(), 0o644)
 			t.Errorf("%s differs from its golden (written to testdata/_failed)", step)

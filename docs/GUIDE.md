@@ -281,6 +281,9 @@ import (
 )
 ```
 
+Sizes are binary size. A pack's fonts are loaded into memory only when
+text first needs them (the CJK pack takes about 10 MB once loaded).
+
 Text is split by script and each cluster Inter lacks is drawn with the
 first pack that has it, as Chromium does. Without a pack, such text is
 drawn as boxes (the text itself is kept intact) and `app.Warnings()`

@@ -16,6 +16,16 @@ stage 6 again on macOS.
 * Line fitting now follows Chromium's breaker for the last piece of a
   line (exact advance), which also fixed two older differing breaks.
 
+### Memory (2026-11-05)
+
+* Font pack faces are parsed lazily (spec/SUBSET.md §7.3). Showcase
+  release build on macOS arm64 at start: 99 MB → 85 MB footprint (Go heap
+  51 → 38 MB). Remaining: frame buffers (~8 MB each at 2x), about 22 MB
+  of native AppKit/CoreGraphics allocations (likely frame copies when
+  presenting; not yet investigated) and the window's backing store.
+* The showcase test compared PNG file bytes, which differ between Go
+  versions for identical pixels; it now compares pixels.
+
 ### JPEG determinism (2026-11-05)
 
 * Found on the Mac: with Go 1.25+ the standard library's JPEG decoder
