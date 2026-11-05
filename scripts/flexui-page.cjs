@@ -24,16 +24,22 @@ const uaCSS = fs.readFileSync(path.join(__dirname, '..', 'internal', 'render', '
 const b64 = (f) => fs.readFileSync(path.join(fontDir, f)).toString('base64');
 // Optional packs in flexui's fallback order (their Go Priority).
 const packDir = path.join(__dirname, '..', 'fonts');
-const packs = [['tamil', 'NotoSansTamil'], ['devanagari', 'NotoSansDevanagari'], ['arabic', 'NotoSansArabic'], ['hebrew', 'NotoSansHebrew']];
+// [dir, family, regular file, bold file (null: the regular face for all weights)]
+const packs = [['tamil', 'NotoSansTamil', 'NotoSansTamil-Regular.ttf', 'NotoSansTamil-Bold.ttf'],
+  ['devanagari', 'NotoSansDevanagari', 'NotoSansDevanagari-Regular.ttf', 'NotoSansDevanagari-Bold.ttf'],
+  ['arabic', 'NotoSansArabic', 'NotoSansArabic-Regular.ttf', 'NotoSansArabic-Bold.ttf'],
+  ['hebrew', 'NotoSansHebrew', 'NotoSansHebrew-Regular.ttf', 'NotoSansHebrew-Bold.ttf'],
+  ['cjk', 'NotoSansSC', 'NotoSansSC-Regular.otf', null]];
 const pb64 = (dir, f) => fs.readFileSync(path.join(packDir, dir, f)).toString('base64');
 const fontFaces = `@font-face { font-family: FlexUI; font-weight: 1 500;
   src: url(data:font/ttf;base64,${b64('Inter-Regular.ttf')}); }
 @font-face { font-family: FlexUI; font-weight: 501 1000;
   src: url(data:font/ttf;base64,${b64('Inter-Bold.ttf')}); }
-` + packs.map(([dir, name]) => `@font-face { font-family: ${name}; font-weight: 1 500;
-  src: url(data:font/ttf;base64,${pb64(dir, name + '-Regular.ttf')}); }
+` + packs.map(([dir, name, reg, bold]) => bold ? `@font-face { font-family: ${name}; font-weight: 1 500;
+  src: url(data:font/ttf;base64,${pb64(dir, reg)}); }
 @font-face { font-family: ${name}; font-weight: 501 1000;
-  src: url(data:font/ttf;base64,${pb64(dir, name + '-Bold.ttf')}); }`).join('\n');
+  src: url(data:font/ttf;base64,${pb64(dir, bold)}); }` : `@font-face { font-family: ${name}; font-weight: 1 1000;
+  src: url(data:font/otf;base64,${pb64(dir, reg)}); }`).join('\n');
 const families = ['FlexUI', ...packs.map(([, name]) => name)].join(', ');
 
 const base = (w, h) => `<style>

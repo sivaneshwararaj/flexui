@@ -31,27 +31,26 @@ machine (local Claude Code or a cloud session). Read it first, then
 | 7. Cluster-aware caret/selection/backspace, bidi movement | done (logical movement as Chromium; see spec/STATUS.md) |
 | 8. IME composition events + caret rect (headless) | done (spec/SUBSET.md §8.7) |
 | 9. IME on macOS (NSTextInputClient) and Windows (IMM32), staged | done, compile-checked only; user to run stage 9 on both OSes (and stage 6 again on macOS) |
-| 10. CJK font pack (opt-in) + UAX #14 for ideographs | **next** |
-| `testdata/multilingual` (Tamil, Hindi, mixed, Arabic, Hebrew, bidi mixed done; long paragraphs and CJK to add) | partly |
-| Final summary to the user (changed / unverified / weakest) | at the end |
+| 10. CJK font pack (opt-in) + UAX #14 for ideographs | done (fonts/cjk; D34 for punctuation trimming) |
+| `testdata/multilingual` (Tamil, Hindi, mixed, Arabic, Hebrew, bidi, CJK, long paragraphs, inputs, IME) | done |
+| Final summary to the user (changed / unverified / weakest) | done (in the session; also spec/STATUS.md) |
 
 Waiting on the user (run on each OS, send the RESULT lines):
 `go run ./platform/<darwin|windows>/stages/stage8` (multilingual
 clipboard), `.../stage9` (IME, with a Japanese input method), and on
 macOS `.../stage6` again (typing now goes through interpretKeyEvents).
 
-## Step 10 notes (next)
+## Possible next work (not requested yet)
 
-* Font: Noto Sans CJK is large (OTF/CFF ~16 MB per weight; our glyph
-  rasterizer handles cubic outlines). Options: a subset font, or Noto
-  Sans SC/JP/KR TTF variable fonts from notofonts (check size). It must
-  be opt-in (`fonts/cjk` or per-language packs) and loaded in the
-  Chromium harness for the cross-check.
-* Line breaking: UAX #14 already breaks between ideographs (go-text);
-  check against Chromium with Chinese/Japanese text (kinsoku: no break
-  before 、。」 etc.). Japanese `lang` (ja/zh/ko) affects glyph forms via
-  locl in pan-CJK fonts.
-* testdata/multilingual: add CJK page and long paragraphs.
+* D34: Blink's HanKerning (text-spacing-trim) with the `halt` feature.
+* Korean pack (Noto Sans KR subset), CJK bold, Japanese forms (JP subset).
+* `RenderHTML` does not draw `<input>` values (only apps do).
+* Results of stages 8 and 9 (and stage 6 on macOS) from the user.
+
+## Step 10 summary (done)
+
+* `fonts/cjk` (Regular only; `Pack.Bold` may be nil), harness support
+  for single-face packs, `script_cjk` docs, line-fit rule (`fitSpan`).
 
 ## Step 9 summary (done, untested)
 

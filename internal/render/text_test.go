@@ -27,9 +27,8 @@ var knownTextDiffs = map[string]knownText{
 	// distribution and Chromium's float steps round 1/64 px apart.
 	"nested": {"D14 sub-pixel rounding of flex shrink", 1, false},
 
-	// Seeded random inline document: a soft line break right after
-	// "Hello," (D23) changes where the line breaks.
-	"inline_0115": {"D23 shaping at a soft line end (different break)", 0, true},
+	// CJK punctuation: Chromium's text-spacing-trim (D34).
+	"script_cjk_punct": {"D34 text-spacing-trim of CJK punctuation", 0, true},
 
 	// Seeded random bidi documents (glyph positions compared).
 	"bidi_0032": {"D32 float32 rounding of a text width", 1, false},
@@ -38,7 +37,6 @@ var knownTextDiffs = map[string]knownText{
 	"bidi_0140": {"D33 trailing-space reshaping in a mixed-direction line", 40, false},
 	"bidi_0117": {"D33 line height of lines with isolates", 128, false},
 	"bidi_0129": {"D33 line height of lines with isolates", 128, false},
-	"bidi_0006": {"D33 different line break (not derived)", 0, true},
 	"bidi_0011": {"D33 different line break (not derived)", 0, true},
 
 	// Seeded random multi-script documents (font fallback, Noto packs).

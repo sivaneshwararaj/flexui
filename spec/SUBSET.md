@@ -615,7 +615,11 @@ clip. A 1:1 mapping copies source pixels exactly.
   and `pre-wrap`. `nowrap` and `pre` never
   wrap. A word wider than the line overflows (`overflow-wrap: normal`).
 * Lines are filled greedily: the next word is added if the line, without
-  its trailing spaces, still fits the content width.
+  its trailing spaces, still fits the content width. The fit is measured
+  as Chromium's line breaker does: the pieces before the last one with
+  their rounded-up widths, the last piece with its exact advance rounded
+  to the nearest 1/64 px (so CJK text whose advances are 15.0001 px at
+  15 px fits exactly ten characters in 150 px).
 * Spaces at the end of a line hang (do not count for fitting, alignment or
   intrinsic sizes), except with `pre` (they count) and with `pre-wrap`
   before a forced break or the end of the run, where they only
@@ -642,7 +646,9 @@ clip. A 1:1 mapping copies source pixels exactly.
 * **Font packs** (opt-in Go packages, `fonts/README.md`) add fallback
   faces: `fonts/tamil` (Noto Sans Tamil), `fonts/devanagari` (Noto Sans
   Devanagari), `fonts/arabic` (Noto Sans Arabic), `fonts/hebrew` (Noto
-  Sans Hebrew). Importing one registers it; the fallback chain is Inter,
+  Sans Hebrew), `fonts/cjk` (Noto Sans SC: Chinese, Japanese kana; a
+  Regular face only, used for bold too; no Korean Hangul). A pack
+  without a Bold face uses its Regular face for every weight. Importing one registers it; the fallback chain is Inter,
   then the registered packs in a fixed priority order (Tamil,
   Devanagari, ...), independent of import order. Packs must be
   registered before the first layout (imports do that).
@@ -707,11 +713,12 @@ clip. A 1:1 mapping copies source pixels exactly.
 |---|---|---|
 | D21 | Glyph anti-aliasing differs from Chromium (FreeType coverage with Skia's luminance-dependent contrast/gamma "preblend"). Glyph positions agree; individual edge pixels differ, by up to about 50 of 255 levels, mean error about 0.3-0.5 levels per text document. | Integer-only own rasterizer; deterministic everywhere. |
 | D22 | Layout is independent of the device scale. Chromium rounds `line-height: normal` metrics in device pixels, so at 2x its lines can be up to 0.5 px (one device pixel) shorter. | Same layout on every display; HiDPI is a paint-time scale only. |
-| D23 | Shaping at a soft line end. Chromium removes the trailing spaces of a soft-wrapped line with `text-align` center or right and shapes the end of the line again without them, which drops kerning against the space (e.g. "Hello," or "." followed by a space): this is now emulated (§7.2), including Chromium's moving the last word down when the line no longer fits, and fixed 3 of the 6 cases. The remaining 3 (2 random Latin documents within 0.5 px, 1 with a different break) involve `text-overflow: ellipsis` / nowrap or flex items whose width is the text's own; we could not derive those. | Rare; under 1 px except for one changed break. |
+| D23 | Shaping at a soft line end. Chromium removes the trailing spaces of a soft-wrapped line that is not aligned to its start side and shapes the end of the line again without them, which drops kerning against the space (e.g. "Hello," or "." followed by a space): this is emulated (§7.2), with Chromium's moving the last word down when the line no longer fits; the line-fit rule of §7.2 (last piece unrounded) fixed one more case. 2 random Latin documents (within 0.5 px) remain, both with `text-overflow: ellipsis` / nowrap or flex items whose width is the text's own; we could not derive those. | Rare; under 0.5 px. |
 | D24 | Text in an element with `text-overflow: ellipsis` and clipping `overflow` ellipsizes (§7.1); in CSS it would not, because the anonymous box does not inherit them. | What authors expect; Chromium comparisons wrap text runs in an equivalent block that takes these properties. |
 | D30 | `em` and `i` are not italic, and `font-style` is not supported: only upright Regular and Bold faces are bundled. | Binary size; add an italic face later. |
 | D32 | Float rounding of text widths: Chromium adds glyph advances as float32 (per shaping run, then per item) before rounding a piece up to 1/64 px. When the exact width is within float32 precision (a few 1/65536 px) above a 1/64 px boundary, Chromium's width is 1/64 px smaller. Only fonts whose scaled advances are not exact in float32 are affected (the Noto packs, units per em 1000); Inter at whole-pixel sizes is exact. Seen in 1 of 150 random multi-script documents. | Emulating float32 summation in Chromium's run order costs more than a 1/64 px difference is worth. |
-| D33 | Bidi residuals not derived: in 8 of 150 random bidi documents, 2 differ by 1/64 px (D32), 2 by about 0.4 px in a line ending in kerned punctuation before a space (the trailing-space reshaping of §7.2 in mixed-direction lines: the same set-up keeps the kerning in one document and drops it in another), 2 have a line 1-2 px taller in Chromium (lines with isolates), and 2 break a line at a different place. | The remaining cases did not reduce to a rule after several attempts; all other bidi documents match glyph for glyph. |
+| D33 | Bidi residuals not derived: in 7 of 150 random bidi documents, 2 differ by 1/64 px (D32), 2 by about 0.4 px in a line ending in kerned punctuation before a space (the trailing-space reshaping of §7.2 in mixed-direction lines: the same set-up keeps the kerning in one document and drops it in another), 2 have a line 1-2 px taller in Chromium (lines with isolates), and 1 breaks a line at a different place. | The remaining cases did not reduce to a rule after several attempts; all other bidi documents match glyph for glyph. |
+| D34 | CJK punctuation spacing: Chromium trims the spacing of full-width punctuation by default (`text-spacing-trim: normal`: adjacent pairs such as "。「" collapse, an opening bracket at a line start and a closing one at a line end when the line would not fit otherwise become half-width, applied with the font's `halt` feature by language-dependent rules). flexui keeps full-width punctuation, so CJK text with such punctuation is wider and can break elsewhere (`testdata/text/docs/script_cjk_punct.html`). Chinese and Japanese text without such punctuation pairs matches Chromium exactly. | Blink's HanKerning rules are language-dependent; left for later. |
 
 ### 7.6 Bidirectional text
 

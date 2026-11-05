@@ -1,8 +1,20 @@
 # Status
 
-Last updated after step 9 of the multilingual work (IME on macOS and
-Windows, staged, not run). Next step: CJK font pack and line breaking
-(step 10).
+Last updated after step 10, the end of the multilingual work (Tamil
+paste diagnosis, script itemization and font fallback, bidi, editing,
+IME, CJK). Waiting on the user: stages 8 and 9 on macOS and Windows,
+stage 6 again on macOS.
+
+### CJK (step 10)
+
+* `fonts/cjk`: Noto Sans SC subset, Regular only (+8.3 MB): Chinese and
+  Japanese kana. Line breaking between ideographs is UAX #14 (go-text);
+  Chinese and Japanese without punctuation pairs match Chromium exactly
+  (`testdata/text/docs/script_cjk.html`). Not done: Chromium's
+  text-spacing-trim of full-width punctuation (D34), Korean (no Hangul
+  font), Japanese glyph forms (the SC subset is used), CJK bold.
+* Line fitting now follows Chromium's breaker for the last piece of a
+  line (exact advance), which also fixed two older differing breaks.
 
 ### IME on the platforms (step 9)
 

@@ -40,7 +40,8 @@ func (f *Face) Name() string { return f.name }
 
 // Pack is a set of fallback faces registered by an optional font package
 // (github.com/sivaneshwararaj/flexui/fonts/...). Priority orders the
-// fallback chain (lower first), independently of import order.
+// fallback chain (lower first), independently of import order. Bold may
+// be nil: bold text then uses the regular face (no synthetic bold).
 type Pack struct {
 	Name          string
 	Priority      int
@@ -110,7 +111,10 @@ func load(name string, data []byte) *Face {
 func (p *Pack) load() {
 	p.once.Do(func() {
 		p.regular = load(p.Name+"-Regular", p.Regular)
-		p.bold = load(p.Name+"-Bold", p.Bold)
+		p.bold = p.regular
+		if p.Bold != nil {
+			p.bold = load(p.Name+"-Bold", p.Bold)
+		}
 	})
 }
 

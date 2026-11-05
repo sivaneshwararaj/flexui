@@ -277,6 +277,7 @@ import (
 	_ "github.com/sivaneshwararaj/flexui/fonts/devanagari" // Noto Sans Devanagari (Hindi, Marathi, Nepali), ~365 KB
 	_ "github.com/sivaneshwararaj/flexui/fonts/arabic"     // Noto Sans Arabic, ~290 KB
 	_ "github.com/sivaneshwararaj/flexui/fonts/hebrew"     // Noto Sans Hebrew, ~40 KB
+	_ "github.com/sivaneshwararaj/flexui/fonts/cjk"        // Noto Sans SC: Chinese + Japanese kana, ~8.3 MB
 )
 ```
 

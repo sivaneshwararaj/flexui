@@ -6,6 +6,10 @@ versioning with `v0.x` tags until the API settles.
 ## Unreleased
 
 ### Added
+- `fonts/cjk` (Noto Sans SC subset, Regular; Chinese and Japanese kana).
+  Packs may omit the Bold face. Chinese and Japanese text checked
+  against Chromium; CJK punctuation trimming is not done (D34).
+- `testdata/multilingual` pages for CJK and long paragraphs.
 - IME on Windows (IMM32) and macOS (NSTextInputClient; struct-returning
   methods in Go assembly since purego callbacks cannot return structs),
   with stage 9 on each OS. Compile-checked only; not yet run. On macOS
@@ -37,6 +41,10 @@ versioning with `v0.x` tags until the API settles.
   real-clipboard round trip of the same strings.
 
 ### Changed
+- Line fitting: the last piece of a line counts with its exact advance
+  (rounded to the nearest 1/64 px), as Chromium's line breaker; fixes one
+  D23 and one D33 case and CJK lines that are a few 1/65536 px wider than
+  the box.
 - Inputs: Backspace deletes one code point of a cluster (vowel signs,
   accents), whole clusters only for emoji sequences, as Chromium; Delete
   still deletes a whole cluster.

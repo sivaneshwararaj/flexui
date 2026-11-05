@@ -621,6 +621,21 @@ func (t *Text) lineSpan(s, e int) geom.Unit {
 	return w
 }
 
+// fitSpan is the width used to decide whether a line fits: like lineSpan
+// (pieces rounded up to 1/64 px), except that the last piece counts with
+// its exact advance rounded to the nearest 1/64 px. Chromium's line
+// breaker places whole items by their rounded widths but finds the break
+// in the last item with unrounded positions, so a line a few 1/65536 px
+// wider than the box still fits (CJK advances at 15px are 15.0001px).
+func (t *Text) fitSpan(s, e int) geom.Unit {
+	if e <= s {
+		return 0
+	}
+	ps := max(t.pstart[e-1], s)
+	f := t.pos[e] - t.pos[ps]
+	return t.lineSpan(s, ps) + geom.Unit((f+t.upem/2)/t.upem)
+}
+
 // snapped returns the position of rune i in its hard line (which starts
 // at rune line) with every piece before it rounded up, and the part in
 // its own piece rounded up too.
@@ -700,7 +715,7 @@ func (t *Text) Layout(w geom.Unit) *Block {
 		for i < limit {
 			s := t.segs[i]
 			c := t.lineSpan(ls, s.end-s.spaces)
-			if i > start && wrap && c > w {
+			if i > start && wrap && t.fitSpan(ls, s.end-s.spaces) > w {
 				break
 			}
 			content = c
