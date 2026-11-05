@@ -192,3 +192,15 @@ func TestComposition(t *testing.T) {
 		t.Errorf("press during composition: %q", got)
 	}
 }
+
+// TestMissingGlyphWarning: text no registered font can draw is reported
+// (here Korean: no pack covers Hangul).
+func TestMissingGlyphWarning(t *testing.T) {
+	w := CheckHTML(`<div>안녕 hello</div>`, "")
+	if len(w) != 1 || !strings.Contains(w[0], "U+C548") {
+		t.Errorf("warnings %q", w)
+	}
+	if w := CheckHTML(`<div>தமிழ் नमस्ते مرحبا שלום 中文</div>`, ""); len(w) != 0 {
+		t.Errorf("covered scripts warned: %q", w)
+	}
+}

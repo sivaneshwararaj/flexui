@@ -66,6 +66,8 @@ type Document struct {
 	// Input returns the editing state of an <input> (set by the view; nil
 	// draws inputs empty).
 	Input func(n *dom.Node) InputState
+	// missingWarned: missing-glyph warnings already given (warnMissing).
+	missingWarned map[string]bool
 }
 
 // Affects reports whether changing pseudo-class flag on element n can

@@ -15,6 +15,7 @@ silicon, macOS 27.2, build 26B123, Retina, scale 2):
 | 6 | Pass for typing: text appears in both fields, the caret moves, "Echo" mirrors the first field, and leaving it printed `RESULT: change name = "see"`; the window resized cleanly. Clipboard (Cmd+C/V across apps) and Option/Cmd caret moves were not explicitly reported. |
 | 7 | Pass: `darwin.Run(app)`; the count reached 80 with the note shown. |
 | 8 | Not run yet (multilingual clipboard round trip). |
+| 6 (again, after step 9) | Typing through `interpretKeyEvents:` works: Tamil typed with a macOS Tamil keyboard reached the field intact (`RESULT: change name = "சி ள "`). It was drawn as boxes because the stage did not import the font packs; it does now (all five). |
 | 9 | Not run yet (IME composition). |
 
 Everything not in a "Pass" line above (the system clipboard, Option/Cmd

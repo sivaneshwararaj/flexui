@@ -8,6 +8,11 @@ import (
 	"flag"
 	"fmt"
 
+	_ "github.com/sivaneshwararaj/flexui/fonts/arabic"
+	_ "github.com/sivaneshwararaj/flexui/fonts/cjk"
+	_ "github.com/sivaneshwararaj/flexui/fonts/devanagari"
+	_ "github.com/sivaneshwararaj/flexui/fonts/hebrew"
+	_ "github.com/sivaneshwararaj/flexui/fonts/tamil"
 	"github.com/sivaneshwararaj/flexui/platform/internal/stagekit"
 	"github.com/sivaneshwararaj/flexui/platform/windows"
 )

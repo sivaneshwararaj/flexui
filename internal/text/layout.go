@@ -1036,3 +1036,15 @@ func (t *Text) LineInk(ln *Line) (top, bottom geom.Unit) {
 
 // LineHeightOf returns the line height of one line of a style's font.
 func LineHeightOf(s Style) geom.Unit { return info(s).lineHeight }
+
+// Missing returns the characters drawn as .notdef (no registered font
+// has them), one per cluster, in order.
+func (t *Text) Missing() []rune {
+	var out []rune
+	for _, g := range t.glyphs {
+		if g.ID == 0 && g.Cluster < len(t.runes) && t.runes[g.Cluster] > ' ' {
+			out = append(out, t.runes[g.Cluster])
+		}
+	}
+	return out
+}

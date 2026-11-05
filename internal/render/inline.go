@@ -2,9 +2,11 @@ package render
 
 import (
 	_ "embed"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/sivaneshwararaj/flexui/internal/dom"
 	"github.com/sivaneshwararaj/flexui/internal/geom"
@@ -126,6 +128,7 @@ func (d *Document) inlineBox(c *style.Cascade, group []*dom.Node, parent *style.
 		Ellipsis: st.TextOverflow == style.TextOverflowEllipsis,
 	}
 	t := d.cache.text(runs, p)
+	d.warnMissing(t.Missing())
 	if t.Empty() {
 		for _, ib := range b.inlines {
 			delete(d.boxes, ib.El)
@@ -296,4 +299,33 @@ func textKey(runs []text.Run, p text.Params) string {
 		k.WriteString(r.Text)
 	}
 	return k.String()
+}
+
+// packFor names the font pack that covers a script.
+var packFor = map[*unicode.RangeTable]string{
+	unicode.Tamil: "tamil", unicode.Devanagari: "devanagari", unicode.Arabic: "arabic",
+	unicode.Hebrew: "hebrew", unicode.Han: "cjk", unicode.Hiragana: "cjk", unicode.Katakana: "cjk",
+}
+
+// warnMissing reports characters no font can draw (they appear as
+// boxes), once per document, naming the font pack to import when there
+// is one.
+func (d *Document) warnMissing(rs []rune) {
+	for _, r := range rs {
+		hint := ""
+		for tab, pack := range packFor {
+			if unicode.Is(tab, r) {
+				hint = fmt.Sprintf("; import _ \"github.com/sivaneshwararaj/flexui/fonts/%s\"", pack)
+			}
+		}
+		msg := fmt.Sprintf("no font has %q (U+%04X): it is drawn as a box%s", r, r, hint)
+		if !d.missingWarned[msg] {
+			if d.missingWarned == nil {
+				d.missingWarned = map[string]bool{}
+			}
+			d.missingWarned[msg] = true
+			d.warn("%s", msg)
+		}
+		return // one warning per paragraph is enough
+	}
 }

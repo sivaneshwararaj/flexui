@@ -15,7 +15,7 @@ func Expect8(cmd, editor string) string {
 	return "one RESULT line per test string (Tamil, Hindi, Arabic, Hebrew, mixed, combining marks, emoji) saying \"byte-identical\", then \"RESULT: 13/13 byte-identical\". " +
 		"Then a window: the clipboard now holds the Tamil sample \"" + testtext.Samples[0].Text + "\"; paste it into " + editor + " and it must read exactly that. " +
 		"Copy any text in another app (e.g. Tamil from a web page) and press " + cmd + "+V in the field: a RESULT line prints its code points (U+...), which must match what you copied. " +
-		"Tamil and Hindi text in the field is drawn with the Noto Sans Tamil / Devanagari packs (the stage imports them); Arabic, Hebrew and emoji show as boxes (no pack yet)."
+		"Text in the field is drawn with the bundled font packs (Tamil, Devanagari, Arabic, Hebrew, CJK); only emoji show as boxes."
 }
 
 // ClipRoundTrip writes every multilingual sample to the system

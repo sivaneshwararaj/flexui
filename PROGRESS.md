@@ -37,8 +37,8 @@ machine (local Claude Code or a cloud session). Read it first, then
 
 Waiting on the user (run on each OS, send the RESULT lines):
 `go run ./platform/<darwin|windows>/stages/stage8` (multilingual
-clipboard), `.../stage9` (IME, with a Japanese input method), and on
-macOS `.../stage6` again (typing now goes through interpretKeyEvents).
+clipboard), `.../stage9` (IME, with a Japanese input method). macOS stage 6 re-run:
+typing works (font packs were missing in the stage; fixed).
 
 ## Possible next work (not requested yet)
 

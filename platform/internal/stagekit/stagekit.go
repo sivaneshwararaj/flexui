@@ -148,7 +148,7 @@ func App5(title string, logf func(string, ...any)) *flexui.App {
 func Expect6(k Keys) string {
 	return "two text fields. Click one and type: characters appear, the caret moves, and \"Echo\" mirrors the first field. Arrow keys, " +
 		k.Word + "+Arrow (word), " + k.Line + " (line start/end), Shift to select, Backspace, " + k.Cmd + "+A/C/X/V all work; " +
-		k.Cmd + "+V pastes text copied in another app, and " + k.Cmd + "+C in a field can be pasted elsewhere. Characters outside the BMP (emoji) insert as one character. Leaving a field prints a RESULT change line. IME composition (e.g. Japanese input) is NOT expected to work yet."
+		k.Cmd + "+V pastes text copied in another app, and " + k.Cmd + "+C in a field can be pasted elsewhere. Characters outside the BMP (emoji) insert as one character. Text in other scripts is drawn with the bundled font packs. Leaving a field prints a RESULT change line. IME composition (e.g. Japanese input) is NOT expected to work yet."
 }
 
 // App6 returns stage 6's app.
