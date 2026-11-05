@@ -18,6 +18,11 @@ stage 6 again on macOS.
 
 ### IME on the platforms (step 9)
 
+* macOS run by the user: stage 6 (Tamil typing) and stage 8 (13/13
+  clipboard strings, paste from other apps) pass; stage 9 showed correct
+  Japanese and right-to-left Arabic text in the fields but no composition
+  events yet (text arrived committed), so the marked-text path and the
+  assembly methods are still unverified.
 * Windows: IMM32 messages, composition window hidden, candidate window
   at the caret. macOS: NSTextInputClient with three methods in Go
   assembly (struct returns). Both compile for all targets; **neither has

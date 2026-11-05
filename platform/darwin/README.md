@@ -16,7 +16,9 @@ silicon, macOS 27.2, build 26B123, Retina, scale 2):
 | 7 | Pass: `darwin.Run(app)`; the count reached 80 with the note shown. |
 | 8 | Not run yet (multilingual clipboard round trip). |
 | 6 (again, after step 9) | Typing through `interpretKeyEvents:` works: Tamil typed with a macOS Tamil keyboard reached the field intact (`RESULT: change name = "சி ள "`). It was drawn as boxes because the stage did not import the font packs; it does now (all five). |
-| 9 | Not run yet (IME composition). |
+| 6 (with font packs) | Pass: Tamil typed with the macOS Tamil keyboard is drawn correctly in both fields and in "Echo"; `RESULT: change name = "சிவா"`, `change other = "குவா"`. |
+| 8 | Pass: 13/13 strings byte-identical through NSPasteboard; Tamil copied in another app pasted into the field with the right code points (U+0BA4 U+0BAE ...). |
+| 9 | Partial: Japanese and Arabic text arrived in the fields correctly (the RTL field right-aligned, Arabic joined, caret on the left), but only as committed text (`input ... composing=false`, no `compose` lines): the run shows paste/insertText, not an IME composition. Typing with the Japanese input method ("kanji", then Space and Enter) still has to be tried. |
 
 Everything not in a "Pass" line above (the system clipboard, Option/Cmd
 caret movement, moves between displays of different scale, amd64 Macs)

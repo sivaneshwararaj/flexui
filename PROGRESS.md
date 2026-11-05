@@ -35,6 +35,10 @@ machine (local Claude Code or a cloud session). Read it first, then
 | `testdata/multilingual` (Tamil, Hindi, mixed, Arabic, Hebrew, bidi, CJK, long paragraphs, inputs, IME) | done |
 | Final summary to the user (changed / unverified / weakest) | done (in the session; also spec/STATUS.md) |
 
+macOS results (user): stage 6 with font packs and stage 8 pass; stage 9
+partial (no `compose` RESULT lines yet: type with the Japanese input
+method, not paste). Windows stages 8 and 9 not run.
+
 Waiting on the user (run on each OS, send the RESULT lines):
 `go run ./platform/<darwin|windows>/stages/stage8` (multilingual
 clipboard), `.../stage9` (IME, with a Japanese input method). macOS stage 6 re-run:
