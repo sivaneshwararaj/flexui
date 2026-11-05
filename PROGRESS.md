@@ -35,6 +35,10 @@ machine (local Claude Code or a cloud session). Read it first, then
 | `testdata/multilingual` (Tamil, Hindi, mixed, Arabic, Hebrew, bidi, CJK, long paragraphs, inputs, IME) | done |
 | Final summary to the user (changed / unverified / weakest) | done (in the session; also spec/STATUS.md) |
 
+JPEG determinism (2026-11-05): Go 1.25+ changed the stdlib JPEG decoder
+and broke `TestHashes`; fixed with `internal/jpeg` (copy of Go 1.24's
+decoder), passes with Go 1.24.0 and 1.27.1 on darwin/arm64.
+
 macOS results (user): stage 6 with font packs and stage 8 pass; stage 9
 partial (no `compose` RESULT lines yet: type with the Japanese input
 method, not paste). `stage9 -auto` checks the IME methods without a
@@ -50,10 +54,6 @@ typing works (font packs were missing in the stage; fixed).
 
 ## Possible next work (not requested yet)
 
-* Determinism hole found on the Mac (2026-11-05): with Go 1.25+ the
-  stdlib JPEG decoder gives different pixels, so `TestHashes` fails on
-  `images` (passes with Go 1.24.0 on darwin/arm64). See spec/STATUS.md
-  Known bugs. Needs a decision: own JPEG decoder or pinned toolchain.
 * D34: Blink's HanKerning (text-spacing-trim) with the `halt` feature.
 * Korean pack (Noto Sans KR subset), CJK bold, Japanese forms (JP subset).
 * `RenderHTML` does not draw `<input>` values (only apps do).

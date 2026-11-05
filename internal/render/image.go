@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"image"
 	"image/draw"
-	_ "image/jpeg" // registers the JPEG decoder
-	_ "image/png"  // registers the PNG decoder
+	_ "image/png" // registers the PNG decoder
 	"io/fs"
 	"net/url"
 	"strings"
 
 	"github.com/sivaneshwararaj/flexui/internal/geom"
+	"github.com/sivaneshwararaj/flexui/internal/jpeg"
 	"github.com/sivaneshwararaj/flexui/internal/paint"
 )
 
@@ -72,9 +72,13 @@ func (c *Cache) loadImage(src string) (*image.RGBA, error) {
 	data, err := c.readImage(src)
 	var img *image.RGBA
 	if err == nil {
-		var m image.Image
-		m, _, err = image.Decode(bytes.NewReader(data))
-		if err == nil {
+		if bytes.HasPrefix(data, []byte("\xff\xd8")) {
+			// Our copy of Go 1.24's decoder: the standard library's
+			// output changes between Go versions (internal/jpeg).
+			img, err = jpeg.DecodeRGBA(bytes.NewReader(data))
+		} else if m, _, derr := image.Decode(bytes.NewReader(data)); derr != nil {
+			err = derr
+		} else {
 			img = image.NewRGBA(image.Rect(0, 0, m.Bounds().Dx(), m.Bounds().Dy()))
 			draw.Draw(img, img.Rect, m, m.Bounds().Min, draw.Src)
 		}

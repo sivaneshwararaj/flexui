@@ -16,6 +16,17 @@ stage 6 again on macOS.
 * Line fitting now follows Chromium's breaker for the last piece of a
   line (exact advance), which also fixed two older differing breaks.
 
+### JPEG determinism (2026-11-05)
+
+* Found on the Mac: with Go 1.25+ the standard library's JPEG decoder
+  gives different pixels (new IDCT), so `TestHashes` failed on the
+  `images` document (127 pixels, 1-2 levels) with Go 1.27.1. Fixed with
+  `internal/jpeg` (copy of Go 1.24's decoder). Verified on darwin/arm64:
+  `TestHashes` and `TestGolden` pass with Go 1.24.0 and 1.27.1, goldens
+  unchanged; the copy is byte-identical to Go 1.24's decoder + draw on
+  all 25 test images (baseline, progressive, all subsamplings, restart
+  markers, gray, RGB, CMYK). amd64/386 covered by the Linux gate.
+
 ### IME on the platforms (step 9)
 
 * macOS run by the user: stage 6 (Tamil typing) and stage 8 (13/13
@@ -334,15 +345,6 @@ stage 6 again on macOS.
 
 ## Known limitations / bugs
 
-* **Determinism depends on the Go version for JPEG images.** `TestHashes`
-  passes on darwin/arm64 with Go 1.24.0 (the `go.mod` version CI uses),
-  but with Go 1.27.1 the `images` document differs: 127 pixels, by 1-2
-  levels, all inside the JPEG images. The standard library's
-  `image/jpeg` IDCT was rewritten (`dct.go` replaces `idct.go`), so the
-  decoded pixels change with the toolchain, not with the architecture.
-  PNG, text and shapes are unaffected. Fix options: a JPEG decoder in
-  the repo, or pinning the toolchain (`toolchain` line in go.mod).
-  Until then, run `make check` with `GOTOOLCHAIN=go1.24.0` on a newer Go.
 * Layout deviations D11-D14 (`spec/SUBSET.md` §4): absolute boxes with
   both vertical insets that overflow, intrinsic sizes of wrapping
   containers with explicit `flex-basis`, some nested cyclic percentages,

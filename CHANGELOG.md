@@ -5,6 +5,13 @@ versioning with `v0.x` tags until the API settles.
 
 ## Unreleased
 
+### Fixed
+- JPEG pixels no longer depend on the Go version: images are decoded by
+  `internal/jpeg`, a copy of Go 1.24's decoder (Go 1.25+ changed the
+  standard library's IDCT, which broke `TestHashes` on newer toolchains).
+- `scripts/check-portability.sh` runs the hash gate natively on macOS
+  (no GOARCH=386 there).
+
 ### Added
 - A warning for characters no font can draw, naming the font pack to
   import (e.g. `import _ ".../fonts/tamil"`); stages 6, 8 and 9 import
