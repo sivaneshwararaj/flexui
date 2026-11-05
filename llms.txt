@@ -12,6 +12,7 @@
 
 ## Examples
 
+- [showcase](examples/showcase): tour of the framework: multi-select order form with live totals and a dialog, calculator with keyboard input, six languages incl. right to left, layout gallery
 - [demo](examples/demo): contacts manager (list, form, modal) with headless golden tests
 - [counter](examples/counter): minimal stateful app, `-window` for macOS/Windows
 - [Go examples](example_test.go): RenderHTML, App with headless session, controlled and uncontrolled inputs

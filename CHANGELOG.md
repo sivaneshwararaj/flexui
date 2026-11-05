@@ -5,6 +5,11 @@ versioning with `v0.x` tags until the API settles.
 
 ## Unreleased
 
+### Added
+- `examples/showcase`: a tour of the framework (order form with
+  multi-select and live totals, calculator, languages, layout gallery)
+  with a scripted headless test and goldens.
+
 ### Fixed
 - JPEG pixels no longer depend on the Go version: images are decoded by
   `internal/jpeg`, a copy of Go 1.24's decoder (Go 1.25+ changed the
