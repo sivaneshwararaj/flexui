@@ -101,6 +101,7 @@ func (n *Node) layoutAbsolute(ch *Node, b *boxStyle, size [2]geom.Unit, m int) {
 		cb[0] - b.padding[style.Left] - b.padding[style.Right],
 		cb[1] - b.padding[style.Top] - b.padding[style.Bottom],
 	}
+	rtl := st.Direction == style.DirectionRTL
 	var pos [2]geom.Unit
 	for a := 0; a < 2; a++ {
 		switch {
@@ -115,7 +116,9 @@ func (n *Node) layoutAbsolute(ch *Node, b *boxStyle, size [2]geom.Unit, m int) {
 			free := imcb - sz[a].V - ms[a] - me[a]
 			switch {
 			case autoS[a] && autoE[a]:
-				if a == 0 && free < 0 {
+				if a == 0 && free < 0 && rtl {
+					ms[a] += free // over-constrained: in rtl the left margin gives way
+				} else if a == 0 && free < 0 {
 					me[a] += free // over-constrained: the end margin gives way
 				} else {
 					ms[a] += free / 2
@@ -137,6 +140,10 @@ func (n *Node) layoutAbsolute(ch *Node, b *boxStyle, size [2]geom.Unit, m int) {
 					off = free
 				}
 				pos[a] = imStart + off + ms[a]
+			case a == 0 && rtl:
+				// Over-constrained in a right-to-left containing block:
+				// left is ignored (CSS 2 §10.3.7).
+				pos[a] = cb[a] - end[a].V - sz[a].V - me[a]
 			default:
 				pos[a] = start[a].V + ms[a]
 			}
@@ -189,7 +196,7 @@ func staticMode(st, cs *style.Style, a, m int) distMode {
 		case distCenter, distAround, distEvenly:
 			mode = distCenter
 		}
-		if st.FlexDirection.IsReverse() {
+		if mainRev(st) {
 			mode = flipMode(mode)
 		}
 	} else {
@@ -203,7 +210,7 @@ func staticMode(st, cs *style.Style, a, m int) distMode {
 		case style.AlignCenter:
 			mode = distCenter
 		}
-		if st.FlexWrap == style.WrapReverse {
+		if crossRev(st) {
 			mode = flipMode(mode)
 		}
 	}

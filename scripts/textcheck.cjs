@@ -12,6 +12,9 @@ const { load } = require('./flexui-page.cjs');
 const dir = process.argv[2];
 
 function measure() {
+  // A document with right-to-left text or a dir attribute.
+  const bidiDoc = /[\u0590-\u08ff\ufb1d-\ufdff\ufe70-\ufeff]/.test(document.body.textContent) ||
+    !!document.querySelector('[dir]');
   const r = (e) => { const b = e.getBoundingClientRect(); return [b.x, b.y, b.width, b.height]; };
   const els = [document.body, ...document.body.querySelectorAll('*')]
     .filter((e) => !['STYLE', 'SCRIPT', 'BR'].includes(e.tagName));
@@ -39,7 +42,9 @@ function measure() {
         // New line: entirely below the current one, or the pen moved back
         // left: character left edges increase along a line, even when kerned
         // (lines can overlap vertically with a small line-height).
-        if (!cur || b.top >= cur.bottom || b.left <= cur.lastLeft) {
+        // In bidi text the pen moves both ways: only "entirely below"
+        // starts a line (bidi documents avoid overlapping lines).
+        if (!cur || b.top >= cur.bottom || (!bidiDoc && b.left <= cur.lastLeft)) {
           cur = { top: b.top, bottom: b.bottom, text: '', x0: Infinity, x1: -Infinity, lastLeft: -Infinity };
           ls.push(cur);
         }

@@ -26,6 +26,7 @@ type Params struct {
 	WhiteSpace style.WhiteSpace
 	Align      style.TextAlign
 	Ellipsis   bool // text-overflow: ellipsis applies (the box clips)
+	RTL        bool // the paragraph's base direction is right to left
 }
 
 // Run is a piece of a paragraph with one style: the text of a text node
@@ -58,8 +59,8 @@ type Text struct {
 	// start of its hard line (tabs resolved there); len(pos) = len(runes)+1.
 	pos []int64
 	// Pieces (Chromium's inline items): maximal ranges of runes of one
-	// run, split at tabs and forced breaks (not at script changes: those
-	// split shaping, not the rounding of widths). pstart[i] and pend[i] bound
+	// run and one bidi level, split at tabs and forced breaks (not at
+	// script changes: those split shaping, not the rounding of widths). pstart[i] and pend[i] bound
 	// the piece of rune i. Widths are rounded per piece.
 	pstart, pend []int
 	// glyphs in logical order; Glyph.Cluster indexes runes.
@@ -69,6 +70,10 @@ type Text struct {
 	// face its cluster was shaped with.
 	scr  []language.Script
 	face []*Face
+	// lvl is the bidi embedding level of each rune; bidi is set when the
+	// text has right-to-left (or mixed) levels.
+	lvl  []uint8
+	bidi bool
 	// segs are the break opportunities: segment i spans
 	// [segs[i].start, segs[i].end); its last `spaces` runes are spaces
 	// that hang at a line end.
@@ -133,6 +138,8 @@ type Line struct {
 	// was shaped again without the trailing spaces it was shaped with (see
 	// reshapeEnd); it applies to positions at End.
 	endAdj geom.Unit
+	// vis is the visual order of the line (bidi text only, see reorder).
+	vis []vseg
 }
 
 // New prepares the single-style paragraph s.
@@ -154,6 +161,7 @@ func NewRuns(runs []Run, p Params) *Text {
 		t.rs = append(t.rs, ri)
 	}
 	t.processWhiteSpace()
+	t.levels()
 	t.shape()
 	t.positions()
 	t.pieces()
@@ -385,13 +393,13 @@ func (t *Text) shape() {
 	t.face = make([]*Face, len(t.runes))
 	start := 0
 	for i := 0; i <= len(t.runes); i++ {
-		if i < len(t.runes) && t.runes[i] != '\n' && t.runes[i] != '\t' && t.sameFont(t.run[i], t.run[start]) && t.scr[i] == t.scr[start] {
+		if i < len(t.runes) && t.runes[i] != '\n' && t.runes[i] != '\t' && t.sameFont(t.run[i], t.run[start]) && t.scr[i] == t.scr[start] && t.lvl[i] == t.lvl[start] {
 			continue
 		}
 		if i > start && t.runes[start] != '\n' && t.runes[start] != '\t' {
 			ri := t.run[start]
 			n := len(t.glyphs)
-			t.glyphs = t.shapeFallback(start, i, t.rs[ri].chain, shapeProps{t.scr[start], t.rs[ri].lang}, t.rs[ri].size, t.glyphs)
+			t.glyphs = t.shapeFallback(start, i, t.rs[ri].chain, shapeProps{t.scr[start], t.rs[ri].lang, t.lvl[start]%2 == 1}, t.rs[ri].size, t.glyphs)
 			for k := n; k < len(t.glyphs); k++ {
 				g := &t.glyphs[k]
 				t.adv[g.Cluster] += g.Advance
@@ -575,7 +583,7 @@ func (t *Text) pieces() {
 	for i := 0; i < n; {
 		j := i + 1
 		if t.runes[i] != '\t' && t.runes[i] != '\n' {
-			for j < n && t.run[j] == t.run[i] && t.runes[j] != '\t' && t.runes[j] != '\n' {
+			for j < n && t.run[j] == t.run[i] && t.lvl[j] == t.lvl[i] && t.runes[j] != '\t' && t.runes[j] != '\n' {
 				j++
 			}
 		}
@@ -723,6 +731,7 @@ func (t *Text) Layout(w geom.Unit) *Block {
 		if ln.X < 0 {
 			ln.X = 0
 		}
+		t.reorder(&ln)
 		b.Lines = append(b.Lines, ln)
 	}
 	var y geom.Unit
@@ -752,10 +761,10 @@ func (t *Text) reshapeEnd(ln *Line) {
 	var sum int64
 	for s := ps; s < e; {
 		k := s + 1
-		for k < e && t.scr[k] == t.scr[s] {
+		for k < e && t.scr[k] == t.scr[s] && t.lvl[k] == t.lvl[s] {
 			k++
 		}
-		for _, g := range t.shapeFallback(s, k, t.rs[ri].chain, shapeProps{t.scr[s], t.rs[ri].lang}, t.rs[ri].size, nil) {
+		for _, g := range t.shapeFallback(s, k, t.rs[ri].chain, shapeProps{t.scr[s], t.rs[ri].lang, t.lvl[s]%2 == 1}, t.rs[ri].size, nil) {
 			sum += g.Advance
 		}
 		s = k
@@ -859,6 +868,9 @@ func (t *Text) EllipsisWidth() geom.Unit { return t.toUnits(t.ellipsisAdvance())
 // X returns the x offset of the pen before rune i on line ln (relative to
 // the content box), for fragments and hit testing.
 func (t *Text) X(ln *Line, i int) geom.Unit {
+	if ln.vis != nil {
+		return t.visX(ln, i)
+	}
 	if i >= len(t.runes) || i >= ln.FullEnd {
 		if i == ln.End {
 			return ln.X + t.lineSpan(ln.Start, i) + ln.endAdj
@@ -882,6 +894,19 @@ type PlacedGlyph struct {
 // Glyphs appends the glyphs of line ln (including its ellipsis) with
 // positions relative to the content box.
 func (t *Text) Glyphs(ln *Line, out []PlacedGlyph) []PlacedGlyph {
+	if ln.vis != nil {
+		out = t.visualGlyphs(ln, out)
+		if ln.Ellipsis {
+			if id, ok := t.strut.face.face.NominalGlyph('…'); ok {
+				x := ln.X + ln.Width
+				if t.p.RTL {
+					x = ln.X - t.EllipsisWidth()
+				}
+				out = append(out, PlacedGlyph{ID: uint16(id), X: x, Y: ln.Baseline, Run: -1, Face: t.strut.face})
+			}
+		}
+		return out
+	}
 	gi := 0
 	for gi < len(t.glyphs) && t.glyphs[gi].Cluster < ln.Start {
 		gi++

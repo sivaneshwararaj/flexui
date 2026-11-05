@@ -131,7 +131,7 @@ func Layout(root *Node, viewportW, viewportH geom.Unit) {
 			sz[a] = b.clamp(a, view[a]-b.margin[s]-b.margin[e])
 		}
 	}
-	dx, dy := relativeOffset(root.Style, vp)
+	dx, dy := relativeOffset(root.Style, vp, false) // the viewport is ltr
 	root.Box = Box{
 		X: b.margin[style.Left] + dx, Y: b.margin[style.Top] + dy,
 		W: sz[0], H: sz[1],
@@ -368,14 +368,19 @@ func edges(s [4]geom.Unit) geom.Edges {
 }
 
 // relativeOffset returns the position: relative shift of an element.
-func relativeOffset(st *style.Style, cb [2]Opt) (dx, dy geom.Unit) {
+// With both left and right set, left wins when the containing block is
+// left to right and right wins when it is right to left (CSS 2 §9.4.3).
+func relativeOffset(st *style.Style, cb [2]Opt, rtl bool) (dx, dy geom.Unit) {
 	if st.Position != style.PositionRelative {
 		return 0, 0
 	}
-	if v, ok := st.Inset[style.Left].Resolve(cb[0].V, cb[0].OK); ok {
-		dx = v
-	} else if v, ok := st.Inset[style.Right].Resolve(cb[0].V, cb[0].OK); ok {
-		dx = -v
+	l, lok := st.Inset[style.Left].Resolve(cb[0].V, cb[0].OK)
+	r, rok := st.Inset[style.Right].Resolve(cb[0].V, cb[0].OK)
+	switch {
+	case lok && (!rok || !rtl):
+		dx = l
+	case rok:
+		dx = -r
 	}
 	if v, ok := st.Inset[style.Top].Resolve(cb[1].V, cb[1].OK); ok {
 		dy = v

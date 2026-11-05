@@ -14,6 +14,13 @@ type Langer interface {
 	Lang() (string, bool)
 }
 
+// Direr is implemented by elements that can carry a dir attribute
+// ("ltr" or "rtl"), which sets direction like a presentational hint
+// (author rules override it).
+type Direr interface {
+	Dir() string
+}
+
 type Element interface {
 	Tag() string // lower-case
 	ID() string
@@ -382,6 +389,14 @@ func (c *Cascade) Compute(el Element, parent *Style, inline string) (Style, []Wa
 	if l, ok := el.(Langer); ok {
 		if v, ok := l.Lang(); ok {
 			s.Lang = strings.TrimSpace(v)
+		}
+	}
+	if d, ok := el.(Direr); ok {
+		switch strings.ToLower(strings.TrimSpace(d.Dir())) {
+		case "ltr":
+			s.Direction = DirectionLTR
+		case "rtl":
+			s.Direction = DirectionRTL
 		}
 	}
 	var matched []*Rule

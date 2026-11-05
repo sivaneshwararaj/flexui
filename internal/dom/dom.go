@@ -168,6 +168,9 @@ func (n *Node) Lang() (string, bool) {
 	return "", false
 }
 
+// Dir implements style.Direr: the element's dir attribute.
+func (n *Node) Dir() string { return n.Attr("dir") }
+
 // Tag implements style.Element.
 func (n *Node) Tag() string { return n.TagName }
 

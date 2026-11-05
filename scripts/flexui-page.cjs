@@ -24,7 +24,7 @@ const uaCSS = fs.readFileSync(path.join(__dirname, '..', 'internal', 'render', '
 const b64 = (f) => fs.readFileSync(path.join(fontDir, f)).toString('base64');
 // Optional packs in flexui's fallback order (their Go Priority).
 const packDir = path.join(__dirname, '..', 'fonts');
-const packs = [['tamil', 'NotoSansTamil'], ['devanagari', 'NotoSansDevanagari']];
+const packs = [['tamil', 'NotoSansTamil'], ['devanagari', 'NotoSansDevanagari'], ['arabic', 'NotoSansArabic'], ['hebrew', 'NotoSansHebrew']];
 const pb64 = (dir, f) => fs.readFileSync(path.join(packDir, dir, f)).toString('base64');
 const fontFaces = `@font-face { font-family: FlexUI; font-weight: 1 500;
   src: url(data:font/ttf;base64,${b64('Inter-Regular.ttf')}); }

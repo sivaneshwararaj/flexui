@@ -187,18 +187,27 @@ type Glyph struct {
 type shapeProps struct {
 	script language.Script
 	lang   language.Language
+	rtl    bool
 }
 
 // shape shapes runes [s, e) of text (the rest is context for shaping
 // across item boundaries) left to right and appends the glyphs, with
 // clusters as indices into text.
+//
+// Right-to-left text comes out of HarfBuzz in visual order; it is
+// returned reversed, in logical (cluster) order like left-to-right text.
+// Reversing a right-to-left range again gives the visual order.
 func (f *Face) shape(text []rune, s, e int, p shapeProps, size geom.Unit, out []Glyph) []Glyph {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	n := len(out)
 	b := f.buf
 	b.Clear()
 	b.AddRunes(text, s, e-s)
 	b.Props.Direction = harfbuzz.LeftToRight
+	if p.rtl {
+		b.Props.Direction = harfbuzz.RightToLeft
+	}
 	b.Props.Script = p.script
 	b.Props.Language = p.lang
 	b.Shape(f.hb, nil)
@@ -216,6 +225,12 @@ func (f *Face) shape(text []rune, s, e int, p shapeProps, size geom.Unit, out []
 			ID: uint16(id), Face: f, Cluster: b.Info[i].Cluster,
 			Advance: adv, XOff: f.hbScale(int64(q.XOffset), size), YOff: f.hbScale(int64(q.YOffset), size),
 		})
+	}
+	if p.rtl {
+		g := out[n:]
+		for i, j := 0, len(g)-1; i < j; i, j = i+1, j-1 {
+			g[i], g[j] = g[j], g[i]
+		}
 	}
 	return out
 }

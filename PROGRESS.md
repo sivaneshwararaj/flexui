@@ -27,7 +27,7 @@ machine (local Claude Code or a cloud session). Read it first, then
 | 0. Tag `v0.1.0`, CHANGELOG | done (tag exists at ab4d228; push it from a local clone: `git tag -a v0.1.0 ab4d228 -m v0.1.0 && git push origin v0.1.0`, the cloud session cannot push tags) |
 | 1-4. Tamil paste diagnosis | done: clipboard and buffer correct; word movement in Indic text fixed; drawing was the fault (no glyphs) |
 | 5. Itemization, font fallback, Noto Tamil/Devanagari packs | done (commit 43db1cd), matches Chromium |
-| 6. Bidi (UAX #9), `dir`/`direction`, RTL alignment, Arabic/Hebrew packs | **in progress** (see below) |
+| 6. Bidi (UAX #9), `dir`/`direction`, RTL alignment, Arabic/Hebrew packs | **in progress**: text and layout done and checked; docs, random docs, edge cases left (see below) |
 | 7. Cluster-aware caret/selection/backspace, bidi visual movement | not started |
 | 8. IME composition events + caret rect (headless) | not started |
 | 9. IME on macOS (NSTextInputClient) and Windows (IMM32), staged | not started |
@@ -40,18 +40,37 @@ Windows: `go run ./platform/<darwin|windows>/stages/stage8`.
 
 ## Step 6 notes (current)
 
-* Fonts: download the unhinted Noto Sans Arabic (2.013) and Hebrew
-  (3.001) Regular/Bold from
-  `https://raw.githubusercontent.com/notofonts/notofonts.github.io/main/fonts/<Family>/unhinted/ttf/<Family>-<Weight>.ttf`
-  into `fonts/arabic`, `fonts/hebrew` (priorities 30, 40), with OFL.txt
-  from `https://raw.githubusercontent.com/notofonts/<arabic|hebrew>/main/OFL.txt`.
-  Add them to `packs` in `scripts/flexui-page.cjs` and to the blank
-  imports in `fonts_test.go` and `internal/render/fonts_test.go`.
-* go-text `bidi.Paragraph.Segment(text, dir)` returns level runs.
-* Chromium splits inline items (width rounding pieces) at bidi level
-  changes; RTL items are shaped right to left.
-* `scripts/textcheck.cjs` detects a new line when "the pen moves left":
-  wrong for RTL; needs another rule for RTL documents.
+Done so far (checkpoint commit "Bidi part 1"):
+
+* `fonts/arabic` (Noto Sans Arabic 2.013), `fonts/hebrew` (Noto Sans
+  Hebrew 3.001), in the Chromium harness and the test imports.
+* Style: `direction: ltr|rtl` (inherited), the `dir` attribute
+  (`ltr`/`rtl`, a presentational hint), `text-align: start|end` (start
+  is the initial value; resolved with `TextAlign.Physical`).
+* `internal/text/bidi.go`: levels per hard line with go-text's bidi
+  (per-character levels read from an unexported field, `runLevels`,
+  guarded by `TestRunLevels`: go-text's `Runs` merge levels 0 and 2);
+  items and pieces split at level changes; RTL items shaped RTL (glyphs
+  stored in logical order); lines reordered (L1, L2) into visual
+  segments `Line.vis`; `X`, `Spans` (inline box fragments) and
+  `Glyphs` use them. All-LTR text keeps the old code paths.
+* Layout: flex axes in RTL containers (`mainRev`, `crossRev` in
+  `internal/layout/flex.go`), over-constrained absolute boxes and
+  relative offsets (right wins in RTL), the space-around/evenly overflow
+  fallback. 400 random `rtl_` layout cases against Chromium: all match
+  except 6 that also differ without direction (D11, D12, D14).
+* Hand-written `testdata/text/docs/bidi_*.html` match Chromium exactly.
+
+Still to do for step 6:
+
+* Seeded random bidi text documents vs Chromium (like `script_`).
+* Check against Chromium: trailing-space reshaping (`reshapeEnd`) in RTL
+  lines, ellipsis in RTL lines, `dir` on inline elements (browsers make
+  it `unicode-bidi: isolate`; currently ignored for inline elements).
+* `<input>` with `dir="rtl"` (alignment, caret) — or leave to step 7.
+* `testdata/multilingual`: Arabic, Hebrew, mixed RTL pages; review PNGs
+  in `review/step6`; SUBSET.md §7.6 (bidi) and deviations; STATUS,
+  CHANGELOG, GUIDE.
 
 ## How the Chromium comparison works
 

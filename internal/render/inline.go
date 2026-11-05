@@ -115,7 +115,8 @@ func (d *Document) inlineBox(c *style.Cascade, group []*dom.Node, parent *style.
 	collect(group, nil, &b.Style)
 	p := text.Params{
 		Style:      textStyle(&st),
-		WhiteSpace: st.WhiteSpace, Align: st.TextAlign,
+		WhiteSpace: st.WhiteSpace, Align: st.TextAlign.Physical(st.Direction),
+		RTL:      st.Direction == style.DirectionRTL,
 		Ellipsis: st.TextOverflow == style.TextOverflowEllipsis,
 	}
 	t := d.cache.text(runs, p)
@@ -180,10 +181,11 @@ func (b *Box) placeInline() {
 			if fs >= fe && !(s == e && s >= ln.Start && s <= ln.FullEnd && ib.El.Tag() != "br") {
 				continue
 			}
-			x0, x1 := t.X(ln, fs), t.X(ln, max(fs, fe))
-			r := geom.Rect{X: b.Abs.X + x0, Y: b.Abs.Y + ln.Baseline - asc, W: x1 - x0, H: asc + desc}
-			ib.Frags = append(ib.Frags, r)
-			u = union(u, r, len(ib.Frags) == 1)
+			for _, sp := range t.Spans(ln, fs, fe) {
+				r := geom.Rect{X: b.Abs.X + sp[0], Y: b.Abs.Y + ln.Baseline - asc, W: sp[1] - sp[0], H: asc + desc}
+				ib.Frags = append(ib.Frags, r)
+				u = union(u, r, len(ib.Frags) == 1)
+			}
 		}
 		ib.Abs = u
 	}
@@ -267,7 +269,7 @@ func textKey(runs []text.Run, p text.Params) string {
 		k.WriteString(strconv.Quote(s.Lang))
 	}
 	st(p.Style)
-	k.WriteString("|" + strconv.Itoa(int(p.WhiteSpace)) + strconv.Itoa(int(p.Align)) + strconv.FormatBool(p.Ellipsis))
+	k.WriteString("|" + strconv.Itoa(int(p.WhiteSpace)) + strconv.Itoa(int(p.Align)) + strconv.FormatBool(p.Ellipsis) + strconv.FormatBool(p.RTL))
 	for _, r := range runs {
 		k.WriteByte('|')
 		st(r.Style)
