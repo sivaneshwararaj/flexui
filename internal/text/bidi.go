@@ -205,6 +205,19 @@ func (t *Text) reorder(ln *Line) {
 // right edge in a right-to-left one. At the end of a segment (i == e) it
 // is the edge after the segment's last rune.
 func (t *Text) visX(ln *Line, i int) geom.Unit {
+	// The logical ends of the line are on its start and end sides (the
+	// caret after the last character of a right-to-left paragraph is at
+	// the line's left edge, even after a left-to-right word).
+	if i == ln.Start || i == ln.End {
+		left, right := ln.X, ln.X
+		if n := len(ln.vis); n > 0 {
+			right = ln.vis[n-1].x + ln.vis[n-1].w
+		}
+		if (i == ln.Start) == t.p.RTL {
+			return right
+		}
+		return left
+	}
 	for _, g := range ln.vis {
 		if i < g.s || i > g.e || i == g.e && !(i == ln.End || g.e == t.nextSegStart(ln, i)) {
 			continue

@@ -123,8 +123,8 @@ func (v *View) reveal(n *dom.Node, st *inputState) {
 	case x < st.scrollX:
 		st.scrollX = x
 	}
-	maxScroll := max(0, v.doc.InputTextWidth(n, s)-room)
-	st.scrollX = min(max(st.scrollX, 0), maxScroll)
+	lo, hi := v.doc.InputScrollRange(n, s, room)
+	st.scrollX = min(max(st.scrollX, lo), hi)
 }
 
 // edited sends an input event after a change of the text.
@@ -157,7 +157,9 @@ func (v *View) editKey(n *dom.Node, st *inputState, k string, mods uint8) bool {
 	}
 	switch k {
 	case "ArrowLeft", "ArrowRight":
-		b.Move(k == "ArrowRight", unit, shift)
+		// Logical movement, as Chromium: Right is forward in a
+		// left-to-right input, backward in a right-to-left one.
+		b.Move((k == "ArrowRight") != v.doc.InputRTL(n), unit, shift)
 	case "Home", "End", "ArrowUp", "ArrowDown":
 		b.Move(k == "End" || k == "ArrowDown", edit.Line, shift)
 	case "Backspace", "Delete":

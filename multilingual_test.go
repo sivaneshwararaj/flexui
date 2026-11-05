@@ -89,3 +89,60 @@ func TestMultilingualInput(t *testing.T) {
 	}
 	checkGoldenAt(t, filepath.Join("testdata", "multilingual", "input_selected.png"), s.Frame())
 }
+
+// TestRTLInput edits a right-to-left input: right-aligned text, arrow
+// keys reversed (logical movement, as Chromium), Backspace by code point
+// in a cluster, a selection across directions, the caret placed by a
+// click (testdata/multilingual/input_rtl_*.png).
+func TestRTLInput(t *testing.T) {
+	var val string
+	app := New(Options{Width: 300, Height: 90})
+	app.SetView(`<div class="f"><input id="he" dir="rtl" oninput="In"><input id="mix"></div>`,
+		`body { padding: 12px; background-color: #f4f5f7; } .f { gap: 8px; } input { width: 260px; }`)
+	app.Handle("In", func(c *Ctx) { val = c.Value })
+	s := headless.Start(app)
+	if w := app.Warnings(); len(w) != 0 {
+		t.Fatalf("warnings %q", w)
+	}
+	s.Click(center(t, app, "he"))
+	s.Type("שָׁלוֹם abc")
+	checkGoldenAt(t, filepath.Join("testdata", "multilingual", "input_rtl_typed.png"), s.Frame())
+	// ArrowRight moves backward in a right-to-left input.
+	s.Key("ArrowRight", 0)
+	s.Key("ArrowRight", 0)
+	if c, _ := app.view.InputSelection("he"); c != 9 { // 11 code points
+		t.Errorf("after two ArrowRight: caret %d, want 9", c)
+	}
+	s.Key("ArrowLeft", 0) // forward again
+	if c, _ := app.view.InputSelection("he"); c != 10 {
+		t.Errorf("after ArrowLeft: caret %d, want 10", c)
+	}
+	// Backspace in "שָׁ" removes one mark at a time.
+	s.Key("Home", 0)
+	s.Key("ArrowLeft", 0) // forward past שָׁ (one cluster)
+	s.Key("Backspace", 0)
+	if val != "שָלוֹם abc" {
+		t.Errorf("backspace in a cluster: %+q", val)
+	}
+	// Select across the direction change and see it drawn in two parts.
+	s.Key("End", 0)
+	s.Key("ArrowRight", platform.ModShift|platform.ModCtrl)
+	s.Key("ArrowRight", platform.ModShift|platform.ModCtrl)
+	checkGoldenAt(t, filepath.Join("testdata", "multilingual", "input_rtl_selected.png"), s.Frame())
+	// A click at the right end of the right-to-left input is the start.
+	x, y, w, h, _ := app.Bounds("he")
+	s.Click(x+w-6, y+h/2)
+	if c, a := app.view.InputSelection("he"); c != 0 || a != 0 {
+		t.Errorf("click at the right end: caret %d anchor %d, want 0", c, a)
+	}
+	// Mixed text in a left-to-right input keeps logical arrow movement.
+	s.Click(center(t, app, "mix"))
+	s.Type("ab שלום cd")
+	s.Key("Home", 0)
+	for k := 0; k < 4; k++ {
+		s.Key("ArrowRight", 0)
+	}
+	if c, _ := app.view.InputSelection("mix"); c != 4 {
+		t.Errorf("mixed ltr input: caret %d after 4 ArrowRight, want 4", c)
+	}
+}

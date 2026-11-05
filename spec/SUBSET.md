@@ -885,9 +885,10 @@ clip. A 1:1 mapping copies source pixels exactly.
 
   | Key | Action (Shift extends the selection) |
   |---|---|
-  | ArrowLeft / ArrowRight | one grapheme; with Alt or Ctrl one word; with Meta to the line start/end |
+  | ArrowLeft / ArrowRight | one grapheme; with Alt or Ctrl one word; with Meta to the line start/end. Logical movement: Right is forward in a left-to-right input, backward in a right-to-left one (as Chromium; not visual movement through mixed text) |
   | Home / End, ArrowUp / ArrowDown | to the start / end |
-  | Backspace / Delete | the selection, else one grapheme (Alt/Ctrl: word, Meta: to the start/end) |
+  | Backspace | the selection, else one **code point** of the cluster before the caret (a vowel sign, an accent), or the whole cluster for emoji sequences (ZWJ, flags, skin tones, keycaps), as Chromium; Alt/Ctrl: word, Meta: to the start |
+  | Delete | the selection, else one grapheme cluster (Alt/Ctrl: word, Meta: to the end) |
   | Ctrl/Meta + A, C, X, V | select all, copy, cut, paste (`App.SetClipboard`; in-memory by default) |
   | Enter | `change` event if the value changed |
   | Tab | focus traversal (§8.4) |
@@ -907,6 +908,13 @@ clip. A 1:1 mapping copies source pixels exactly.
   empty) on one line, vertically centered and clipped to the content box,
   scrolled horizontally so the caret stays visible. While focused, a
   1px caret in the text color (or a light blue selection highlight).
+* **Direction**: an input with `dir="rtl"` (or `direction: rtl`) shows
+  its text right-aligned; text is bidi-reordered (§7.6) in every input;
+  a selection across a direction change is drawn as several rectangles;
+  the caret at the logical start or end of the text is drawn at the
+  line's start or end side. Clusters and Backspace behavior were checked
+  against Chromium for Devanagari, Tamil, Arabic, Hebrew, combining
+  accents and emoji (`internal/edit` TestChromiumEditing).
 * Not supported yet: IME composition (macOS step, M8), undo, double-click
   word selection, autoscroll while drag-selecting, `maxlength`,
   `readonly`, password fields. **D31**: the caret does not blink (frames

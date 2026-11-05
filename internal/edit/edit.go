@@ -222,11 +222,20 @@ func (b *Buffer) Move(forward bool, u Unit, extend bool) {
 }
 
 // Delete deletes the selection, or else from the caret one unit backward
-// (Backspace) or forward (Delete). It reports whether the text changed.
+// (Backspace) or forward (Delete). Backspace by Char removes one code
+// point unless the cluster is an emoji sequence; Delete removes a whole
+// grapheme cluster (both as Chromium). It reports whether the text
+// changed.
 func (b *Buffer) Delete(forward bool, u Unit) bool {
 	s, e := b.Selection()
 	if s == e {
 		t := b.target(b.Caret, forward, u)
+		if !forward && u == Char && t < b.Caret && !emojiCluster(b.text[t:b.Caret]) {
+			// Backspace removes one code point of a cluster (a vowel
+			// sign, a combining accent), as browsers do; emoji sequences
+			// (ZWJ, flags, skin tones, keycaps) go as a whole.
+			t = b.Caret - 1
+		}
 		s, e = min(b.Caret, t), max(b.Caret, t)
 		if s == e {
 			return false
@@ -234,8 +243,34 @@ func (b *Buffer) Delete(forward bool, u Unit) bool {
 	}
 	b.text = append(b.text[:s:s], b.text[e:]...)
 	b.reindex()
-	b.Caret, b.Anchor = s, s
+	b.Caret, b.Anchor = b.snap(s), b.snap(s)
 	return true
+}
+
+// emojiCluster reports whether a grapheme cluster is an emoji sequence,
+// which Backspace deletes whole (Chromium's BackspaceStateMachine):
+// regional-indicator flags, emoji modifiers (skin tones), variation
+// selector 16, keycaps, tag sequences, or a zero-width joiner next to a
+// pictograph. Other clusters lose one code point per Backspace.
+func emojiCluster(c []rune) bool {
+	if len(c) < 2 {
+		return false
+	}
+	zwj, pict := false, false
+	for _, r := range c {
+		switch {
+		case r >= 0x1F1E6 && r <= 0x1F1FF, // regional indicators
+			r >= 0x1F3FB && r <= 0x1F3FF, // emoji modifiers
+			r == 0xFE0F, r == 0x20E3,     // VS16, combining keycap
+			r >= 0xE0020 && r <= 0xE007F: // tags
+			return true
+		case r == 0x200D:
+			zwj = true
+		case r >= 0x1F000 || r >= 0x2600 && r <= 0x27BF:
+			pict = true
+		}
+	}
+	return zwj && pict
 }
 
 // SetCaret puts the caret at p (snapped to a grapheme boundary); with

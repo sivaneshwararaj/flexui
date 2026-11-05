@@ -28,8 +28,8 @@ machine (local Claude Code or a cloud session). Read it first, then
 | 1-4. Tamil paste diagnosis | done: clipboard and buffer correct; word movement in Indic text fixed; drawing was the fault (no glyphs) |
 | 5. Itemization, font fallback, Noto Tamil/Devanagari packs | done (commit 43db1cd), matches Chromium |
 | 6. Bidi (UAX #9), `dir`/`direction`, RTL alignment, Arabic/Hebrew packs | done (spec/SUBSET.md §7.6; D33 lists the residuals) |
-| 7. Cluster-aware caret/selection/backspace, bidi visual movement | **next** (see below) |
-| 8. IME composition events + caret rect (headless) | not started |
+| 7. Cluster-aware caret/selection/backspace, bidi movement | done (logical movement as Chromium; see spec/STATUS.md) |
+| 8. IME composition events + caret rect (headless) | **next** |
 | 9. IME on macOS (NSTextInputClient) and Windows (IMM32), staged | not started |
 | 10. CJK font pack (opt-in) + UAX #14 for ideographs | not started |
 | `testdata/multilingual` (Tamil, Hindi, mixed, Arabic, Hebrew, bidi mixed done; long paragraphs and CJK to add) | partly |
@@ -38,20 +38,29 @@ machine (local Claude Code or a cloud session). Read it first, then
 Waiting on the user: stage 8 (multilingual clipboard) on macOS and
 Windows: `go run ./platform/<darwin|windows>/stages/stage8`.
 
-## Step 7 notes (next)
+## Step 8 notes (next)
 
-* Inputs (`internal/render/input.go`, `internal/view/input.go`,
-  `internal/edit`): the input's text is a one-line `text.Text` with
-  `Params{WhiteSpace: pre}`, no RTL or alignment yet. To do: pass the
-  input's direction (`dir` / `direction`) into its Params (right
-  alignment for rtl), caret x from `Text.X` (bidi aware via `visX`),
-  visual arrow-key movement in mixed text (Left/Right move visually),
-  selection drawn as several rectangles (`Text.Spans`), Backspace
-  deleting one code point inside Indic clusters as browsers do (step 3
-  found the buffer deletes whole clusters), hit testing (`indexAt`) in
-  reordered lines.
-* Verify Backspace behaviour against Chromium first (e.g. in an
-  `<input>` via Playwright: type "नमस्ते", press Backspace, read value).
+* Add to `platform.Event`: composition kinds (start, update with the
+  marked text, marked range/selection and underline style, commit,
+  cancel). Add a caret-rectangle query the platform can call (the
+  focused input's caret rect in window coordinates) so the OS candidate
+  window can be placed.
+* `internal/view`: an input in composition shows the marked text at the
+  caret, underlined, not yet in the value (no `input` event until
+  commit; Chromium does fire `input` during composition with
+  `isComposing` — verify in Chromium before choosing).
+* Headless: `headless.Session` methods to send composition events;
+  goldens of the marked text.
+
+## Step 7 summary (done)
+
+* `internal/edit`: Backspace by code point except emoji clusters
+  (`emojiCluster`), checked against Chromium (`TestChromiumEditing`).
+* `internal/render/input.go`: inputs get the element's direction; RTL
+  right-aligned (`inputOffset`), `InputScrollRange`, `InputRTL`,
+  selections with `Text.Spans`. `internal/view/input.go`: arrows
+  reversed in RTL inputs; scroll range both sides.
+* `Text.visX`: logical line ends drawn on the start/end side.
 
 ## Step 6 summary (done)
 

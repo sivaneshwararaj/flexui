@@ -47,9 +47,11 @@ func (b *Box) contentBox() geom.Rect {
 	}
 }
 
-// inputText returns the laid-out single line of s in the input's style.
+// inputText returns the laid-out single line of s in the input's style
+// and direction (bidi reordered; positions from the line's left edge).
 func (d *Document) inputText(b *Box, s string) (*text.Text, *text.Line) {
-	p := text.Params{Style: textStyle(&b.Style), WhiteSpace: style.WhiteSpacePre}
+	p := text.Params{Style: textStyle(&b.Style), WhiteSpace: style.WhiteSpacePre,
+		RTL: b.Style.Direction == style.DirectionRTL}
 	t := d.cache.text([]text.Run{{Text: s, Style: p.Style}}, p)
 	blk := t.Layout(1 << 40)
 	if len(blk.Lines) == 0 {
@@ -58,28 +60,49 @@ func (d *Document) inputText(b *Box, s string) (*text.Text, *text.Line) {
 	return t, &blk.Lines[0]
 }
 
-// InputCaretX returns the x offset of rune i in the input's text (relative
-// to its content box, unscrolled), and the width of the content box.
+// inputOffset is where the line of text starts in the content box before
+// scrolling: 0 in a left-to-right input; in a right-to-left one the text
+// is right-aligned (negative when it is wider than the box).
+func (d *Document) inputOffset(b *Box, ln *text.Line) geom.Unit {
+	if b.Style.Direction != style.DirectionRTL {
+		return 0
+	}
+	return b.contentBox().W - ln.Width
+}
+
+// InputCaretX returns the x offset of the caret before rune i in the
+// input's text (relative to its content box, unscrolled; bidi aware), and
+// the width of the content box.
 func (d *Document) InputCaretX(n *dom.Node, s string, i int) (x, width geom.Unit) {
 	b := d.boxes[n]
 	if b == nil || b.Lay == nil {
 		return 0, 0
 	}
 	t, ln := d.inputText(b, s)
+	off := d.inputOffset(b, ln)
 	if len([]rune(s)) == 0 {
-		return 0, b.contentBox().W
+		return off, b.contentBox().W
 	}
-	return t.X(ln, i), b.contentBox().W
+	return off + t.X(ln, i), b.contentBox().W
 }
 
-// InputTextWidth returns the advance width of s in the input's font.
-func (d *Document) InputTextWidth(n *dom.Node, s string) geom.Unit {
+// InputScrollRange returns the range of horizontal scroll offsets that
+// keep the text of s in view in an input whose usable width is room.
+func (d *Document) InputScrollRange(n *dom.Node, s string, room geom.Unit) (lo, hi geom.Unit) {
 	b := d.boxes[n]
 	if b == nil || b.Lay == nil || s == "" {
-		return 0
+		return 0, 0
 	}
 	_, ln := d.inputText(b, s)
-	return ln.Width
+	off := d.inputOffset(b, ln)
+	return min(0, off), max(0, off+ln.Width-room)
+}
+
+// InputRTL reports whether input n is right to left (its arrow keys move
+// the other way, as in Chromium).
+func (d *Document) InputRTL(n *dom.Node) bool {
+	b := d.boxes[n]
+	return b != nil && b.Style.Direction == style.DirectionRTL
 }
 
 // InputContent returns the content box of input n (document coordinates).
@@ -104,15 +127,18 @@ func (d *Document) paintInput(c paint.Canvas, b *Box, st InputState) {
 	t, ln := d.inputText(b, s)
 	// The line is vertically centered in the content box.
 	top := cb.Y + (cb.H-ln.Height)/2
-	x0 := cb.X - st.ScrollX
+	off := d.inputOffset(b, ln)
+	x0 := cb.X - st.ScrollX + off
 	if ph {
-		x0 = cb.X
+		x0 = cb.X + max(0, off)
 	}
 	asc, desc := t.Ascent(), t.Descent()
 	if st.Focused && !ph && st.Caret != st.Anchor {
+		// In bidi text a selection can be several rectangles.
 		s0, s1 := min(st.Caret, st.Anchor), max(st.Caret, st.Anchor)
-		xa, xb := t.X(ln, s0), t.X(ln, s1)
-		c.FillRRect(paint.Rect(geom.Rect{X: x0 + xa, Y: top + ln.Baseline - asc, W: xb - xa, H: asc + desc}), selectionColor)
+		for _, sp := range t.Spans(ln, s0, s1) {
+			c.FillRRect(paint.Rect(geom.Rect{X: x0 + sp[0], Y: top + ln.Baseline - asc, W: sp[1] - sp[0], H: asc + desc}), selectionColor)
+		}
 	}
 	if s != "" {
 		pc := color(col)
@@ -139,7 +165,10 @@ func (d *Document) paintInput(c paint.Canvas, b *Box, st InputState) {
 		if !ph {
 			cx = t.X(ln, st.Caret)
 		} else {
-			x0 = cb.X
+			x0 = cb.X // an empty input: the caret at the start side
+			if b.Style.Direction == style.DirectionRTL {
+				x0 = cb.X + cb.W - geom.Px(1)
+			}
 		}
 		c.FillRRect(paint.Rect(geom.Rect{X: x0 + cx, Y: top + ln.Baseline - asc, W: geom.Px(1), H: asc + desc}), color(col))
 	}

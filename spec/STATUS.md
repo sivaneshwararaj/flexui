@@ -1,8 +1,24 @@
 # Status
 
-Last updated after step 6 of the multilingual work (bidirectional
-text). Next steps: cluster-aware and bidi-aware editing in inputs (step
-7); IME; CJK.
+Last updated after step 7 of the multilingual work (editing in
+inputs). Next steps: IME composition events (step 8), IME on macOS and
+Windows (step 9), CJK (step 10).
+
+### Editing (step 7)
+
+* Measured in Chromium 153 (`<input>`, Playwright) and matched: arrow
+  keys move by grapheme cluster; Backspace removes one code point of an
+  Indic, Hebrew, Arabic or accented cluster but whole emoji sequences;
+  Delete removes a whole cluster; arrow keys move logically (in a
+  right-to-left input ArrowRight goes backward). Note: the request said
+  "bidi visual movement"; Chromium on Linux moves logically, so flexui
+  does too (visual movement would differ from the oracle).
+* Right-to-left inputs: right-aligned, scroll range on both sides,
+  caret at the line ends on the correct side, selections in mixed text
+  as several rectangles. Headless goldens:
+  `testdata/multilingual/input_rtl_*.png`.
+* Not done: visual (rather than logical) arrow movement as an option;
+  double-click word selection; undo.
 
 ### Bidirectional text (step 6)
 

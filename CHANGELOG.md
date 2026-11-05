@@ -6,6 +6,9 @@ versioning with `v0.x` tags until the API settles.
 ## Unreleased
 
 ### Added
+- Inputs: right-to-left inputs (`dir="rtl"`: right-aligned, arrow keys
+  reversed as in Chromium), bidi-reordered text with multi-rectangle
+  selections in every input.
 - Bidirectional text: `direction`, the `dir` attribute (`ltr`, `rtl`,
   `auto`; isolates on inline elements), `text-align: start | end` (start
   is the new initial value, same as `left` in left-to-right text), UAX #9
@@ -26,6 +29,9 @@ versioning with `v0.x` tags until the API settles.
   real-clipboard round trip of the same strings.
 
 ### Changed
+- Inputs: Backspace deletes one code point of a cluster (vowel signs,
+  accents), whole clusters only for emoji sequences, as Chromium; Delete
+  still deletes a whole cluster.
 - Chromium allows a line break after every run of spaces (also before
   `!`, `)` ...); flexui now does too.
 - Glyph advances are scaled as Chromium does on Linux (FreeType
