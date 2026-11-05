@@ -5,13 +5,26 @@ versioning with `v0.x` tags until the API settles.
 
 ## Unreleased
 
+## v0.1.0 (2026-11-05)
+
+First tagged state. All seven platform verification stages pass on macOS
+(Version 27.2) and Windows (build 26300, 125% scaling); the demo runs on
+both. Module path: `github.com/sivaneshwararaj/flexui`.
+
+### Fixed
+- Windows clipboard: `OpenClipboard` is retried for about 100 ms (another
+  process can hold the clipboard briefly), `EmptyClipboard` is checked,
+  and failures are logged with `-debug`.
+
 ### Added
+- Headless test of Ctrl+C/X/V (the copy test used Cmd only); Windows
+  stage 6 prints a `RESULT` line for every clipboard read and write.
 - Documentation for users and coding agents: `README.md`,
   `docs/GUIDE.md`, `AGENTS.md`, `llms.txt`; Go examples
   (`example_test.go`) checked by `go test`. `Ctx.InputValue(id)` reads an
   input inside handlers.
 - `platform/windows` (x/sys/windows, no cgo) with `windows.Run`, staged
-  verification commands and README (compile-checked, not yet run);
+  verification commands and README (stages 1-7 pass on Windows);
   `-window` on Windows for the counter and demo examples. Dependency:
   `golang.org/x/sys` v0.41.0 (Windows backend only).
 - Damage-region repainting and copying, incremental paint-only restyle
@@ -23,8 +36,8 @@ versioning with `v0.x` tags until the API settles.
 - M7: portability gate (builds/vets all targets, dependency rules on every
   OS, render hashes on linux/386, `TestHashes` with
   `testdata/render/hashes.txt`); `platform/darwin` (purego) with
-  `darwin.Run`, staged verification commands and README (compile-checked,
-  not yet run on a Mac); `examples/counter -window`. New dependency:
+  `darwin.Run`, staged verification commands and README (stages 1-7
+  pass on a Mac); `examples/counter -window`. New dependency:
   `github.com/ebitengine/purego` v0.10.0 (macOS backend only).
 - M8a text inputs: editing model (`internal/edit`), keyboard editing and
   movement, clipboard (`App.SetClipboard`), pointer caret and selection,
