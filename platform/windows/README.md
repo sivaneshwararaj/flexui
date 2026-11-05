@@ -8,7 +8,11 @@ and compile-checked there for `windows/amd64` and `windows/arm64` with
 |---|---|
 | 1 | Pass: all Win32 functions resolved; `Windows 10.0 build 26300`. |
 | 2 | Pass: quadrants red/green/blue/white in the right places (top-down DIB and BGRA conversion correct). The client area in the screenshot is about 600x400 pixels for 480x320 logical pixels, consistent with 125% scaling (DPI sizing works). |
-| 3-7 | Not run yet. |
+| 3 | Pass: `presented 420x260 @1.25x ... identical: true` (presented frame byte-identical to headless); card, bold and link runs sharp at 125%. |
+| 4 | Pass: boxes re-wrap on resize, size text updates; RESULT lines report e.g. `535x320 logical @1.25x = 669x400 pixels`. Moving to a monitor with another scale not reported. |
+| 5 | Pass: hover, `Inc` clicks, list wheel scrolling with scrollbar, item selection (`picked item 3`, `5`). |
+| 6 | Partial: typing, caret and `RESULT: change` lines work. **Ctrl+C did not copy.** Paste from other apps not reported. The stage now prints a `RESULT: clipboard write/read ...` line with the error for every copy and paste, and `OpenClipboard` is retried for ~100 ms; to be re-run. |
+| 7 | Not run yet. |
 
 Everything else (stages 3-7: flexui frames, resizing, DPI changes,
 input, text, clipboard, closing) is still untested.
@@ -73,8 +77,10 @@ into `review/windows`).
 
 ## Untested parts and specific risks
 
-Stages 1-2 confirm the Win32 bindings, window creation, presentation and
-initial DPI sizing. Still unverified, with the risks noted before running:
+Stages 1-5 confirm the Win32 bindings, window creation, presentation,
+DPI sizing at 125%, resizing, pointer, wheel and keyboard input; stage 6
+confirms text input. Ctrl+C (clipboard write) failed in the first run and
+is being diagnosed. Still unverified, with the risks noted before running:
 
 * In particular:
   * The hand-written structure layouts (`WNDCLASSEXW`, `MSG`,

@@ -155,3 +155,26 @@ func TestInputScrollAndPointer(t *testing.T) {
 func nodeByID(a *App, id string) *dom.Node {
 	return a.view.Document().Dom.Root.FindID(id)
 }
+
+// TestInputCtrlCopy checks copy and cut with Ctrl (Windows, Linux), not
+// only Cmd: Ctrl+C was reported not working on Windows.
+func TestInputCtrlCopy(t *testing.T) {
+	f := newFormApp()
+	s := headless.Start(f.app)
+	s.Click(center(t, f.app, "name"))
+	s.Type("Ada Lovelace")
+	s.Key("ArrowLeft", platform.ModCtrl|platform.ModShift) // select "Lovelace"
+	s.Key("c", platform.ModCtrl)
+	if c, _ := s.Clipboard.ReadText(); c != "Lovelace" {
+		t.Errorf("Ctrl+C: clipboard %q", c)
+	}
+	s.Key("a", platform.ModCtrl)
+	s.Key("x", platform.ModCtrl)
+	if c, _ := s.Clipboard.ReadText(); c != "Ada Lovelace" || f.Name != "" {
+		t.Errorf("Ctrl+A, Ctrl+X: clipboard %q, value %q", c, f.Name)
+	}
+	s.Key("v", platform.ModCtrl)
+	if f.Name != "Ada Lovelace" {
+		t.Errorf("Ctrl+V: value %q", f.Name)
+	}
+}
