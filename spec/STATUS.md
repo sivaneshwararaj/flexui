@@ -1,6 +1,6 @@
 # Status
 
-Last updated after the macOS run (stages 1-7 pass). Next steps: Windows stage results, IME composition (rest of M8).
+Last updated after the Windows run (stages 1-7 pass on macOS and Windows; the demo runs on both). Next steps: IME composition (rest of M8).
 
 | Milestone | State |
 |---|---|
@@ -14,7 +14,7 @@ Last updated after the macOS run (stages 1-7 pass). Next steps: Windows stage re
 | M5b Inline formatting, images, default styles, disabled, focus events, scrollbars | done |
 | M7 Portability gate + macOS | gate done; macOS stages 1-7 passed on an Apple-silicon Mac (macOS 27.2), incl. typing and resizing; clipboard, scale changes between displays and Intel Macs unverified |
 | M8 Text input | M8a done (editing model, headless); IME composition with the macOS step |
-| Windows backend | stages 1-6 pass on Windows (build 26300), clipboard both ways after an OpenClipboard retry; stage 7 not run (see platform/windows/README.md) |
+| Windows backend | stages 1-7 pass on Windows (build 26300), demo runs; clipboard both ways after an OpenClipboard retry (see platform/windows/README.md) |
 | M9 Demo app | done headless (`examples/demo`); the window is untested |
 
 ## Works
@@ -105,7 +105,7 @@ Last updated after the macOS run (stages 1-7 pass). Next steps: Windows stage re
   content in `platform/internal/stagekit`); `examples/counter` and
   `examples/demo` take `-window` on Windows too. Verified by the user:
   stages 1-2 (Win32 bindings, window, presentation, 125% DPI sizing) on
-  Windows build 26300; stages 1-6 pass, stage 7 not run.
+  Windows build 26300; stages 1-7 pass and the demo runs.
 * Demo app (M9, `examples/demo`): a contacts manager (searchable list
   with selection and scrolling, edit form with Save/Revert enabled only
   when dirty, delete confirmation modal with Escape and backdrop click,
