@@ -5,6 +5,18 @@ versioning with `v0.x` tags until the API settles.
 
 ## Unreleased
 
+### Fixed
+- Inputs: word movement and word deletion (Ctrl/Alt+Arrow,
+  Ctrl/Alt+Backspace) treated vowel signs, viramas, combining marks and
+  joiners as word breaks; words are now judged per grapheme cluster.
+- Windows clipboard read is bounded by the memory block size
+  (`GlobalSize`) instead of scanning for a NUL.
+
+### Added
+- Multilingual paste/copy tests (`internal/testtext` samples), Windows
+  UTF-16 clipboard conversion tests, and stage 8 on macOS and Windows: a
+  real-clipboard round trip of the same strings.
+
 ## v0.1.0 (2026-11-05)
 
 First tagged state. All seven platform verification stages pass on macOS

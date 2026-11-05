@@ -141,27 +141,33 @@ func (b *Buffer) nextChar(p int) int {
 
 func isWord(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '\'' }
 
+// wordAt reports whether the grapheme cluster [s, e) belongs to a word.
+// It is decided by the cluster's first character, so vowel signs,
+// viramas, combining marks and joiners (which are not letters) count as
+// part of the word they attach to.
+func (b *Buffer) wordAt(s, e int) bool { return s < e && isWord(b.text[s]) }
+
 // PrevWord returns the start of the word before p: skip non-word
-// characters backwards, then word characters (as browsers on all
-// platforms do for Ctrl/Alt+Left).
+// clusters backwards, then word clusters (as browsers on all platforms
+// do for Ctrl/Alt+Left).
 func (b *Buffer) PrevWord(p int) int {
-	for p > 0 && !isWord(b.text[p-1]) {
+	for p > 0 && !b.wordAt(b.prevChar(p), p) {
 		p = b.prevChar(p)
 	}
-	for p > 0 && isWord(b.text[p-1]) {
+	for p > 0 && b.wordAt(b.prevChar(p), p) {
 		p = b.prevChar(p)
 	}
 	return p
 }
 
-// NextWord returns the end of the word after p: skip non-word characters,
-// then word characters (macOS style; also used on other platforms).
+// NextWord returns the end of the word after p: skip non-word clusters,
+// then word clusters (macOS style; also used on other platforms).
 func (b *Buffer) NextWord(p int) int {
 	n := len(b.text)
-	for p < n && !isWord(b.text[p]) {
+	for p < n && !b.wordAt(p, b.nextChar(p)) {
 		p = b.nextChar(p)
 	}
-	for p < n && isWord(b.text[p]) {
+	for p < n && b.wordAt(p, b.nextChar(p)) {
 		p = b.nextChar(p)
 	}
 	return p

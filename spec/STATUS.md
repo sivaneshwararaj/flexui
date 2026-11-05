@@ -1,6 +1,16 @@
 # Status
 
-Last updated after the Windows run (stages 1-7 pass on macOS and Windows; the demo runs on both). Next steps: IME composition (rest of M8).
+Last updated after Phase 1 of the multilingual work (the Tamil paste
+diagnosis, below). Next steps: script itemization, font fallback and
+bundled Noto fonts; bidi; IME.
+
+### Tamil paste diagnosis (Phase 1)
+
+| Layer | Finding |
+|---|---|
+| Clipboard | Correct. Headless: 13 multilingual strings paste and copy back byte-identical (`TestPasteMultilingual`). Windows UTF-16 conversion, surrogate pairs and NUL termination are unit-tested on every OS (`platform/windows/utf16_test.go`); the read is now bounded by `GlobalSize` (it scanned for a NUL without a limit). macOS passes Go strings to `stringWithUTF8String:` as NUL-terminated copies (checked in purego v0.10.0's `addValue`). The real-clipboard round trip is stage 8 on each OS: **not run yet**. |
+| Buffer | Data intact; clusters follow UAX #29 (Unicode 15.1 in go-text v0.3.5, incl. Devanagari conjuncts as one cluster; Tamil splits at the pulli as UAX #29 specifies). **Bug fixed:** word movement and Ctrl/Alt+Backspace treated vowel signs, viramas and joiners as word breaks (Ctrl+Backspace at the end of `नमस्ते दुनिया` deleted both words). Remaining difference from browsers: Backspace deletes a whole cluster (`स्ते`), browsers delete one code point in Indic clusters (step 7). |
+| Drawing | **At fault for what you saw.** Inter has no Tamil glyphs, and each code point is drawn as its own .notdef box (vowel signs and pulli included), so `தமிழ்` shows five boxes: looks garbled, data is not (`review/phase1`). Fixed by font fallback (step 5). |
 
 | Milestone | State |
 |---|---|
@@ -12,9 +22,9 @@ Last updated after the Windows run (stages 1-7 pass on macOS and Windows; the de
 | M5 Handlers and state | done |
 | M6 Interaction | done |
 | M5b Inline formatting, images, default styles, disabled, focus events, scrollbars | done |
-| M7 Portability gate + macOS | gate done; macOS stages 1-7 passed on an Apple-silicon Mac (macOS 27.2), incl. typing and resizing; clipboard, scale changes between displays and Intel Macs unverified |
+| M7 Portability gate + macOS | gate done; macOS stages 1-7 passed on an Apple-silicon Mac (macOS 27.2), incl. typing and resizing; clipboard, scale changes between displays and Intel Macs unverified; stage 8 (multilingual clipboard) not run |
 | M8 Text input | M8a done (editing model, headless); IME composition with the macOS step |
-| Windows backend | stages 1-7 pass on Windows (build 26300), demo runs; clipboard both ways after an OpenClipboard retry (see platform/windows/README.md) |
+| Windows backend | stages 1-7 pass on Windows (build 26300), demo runs; clipboard both ways after an OpenClipboard retry; stage 8 (multilingual clipboard) not run (see platform/windows/README.md) |
 | M9 Demo app | done headless (`examples/demo`); the window is untested |
 
 ## Works
