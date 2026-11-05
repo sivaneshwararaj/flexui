@@ -1,8 +1,30 @@
 # Status
 
-Last updated after Phase 1 of the multilingual work (the Tamil paste
-diagnosis, below). Next steps: script itemization, font fallback and
-bundled Noto fonts; bidi; IME.
+Last updated after step 5 of the multilingual work (script
+itemization, font fallback, Tamil and Devanagari packs). Next steps:
+bidi (Arabic, Hebrew); cluster-aware editing; IME; CJK.
+
+### Multi-script text (step 5)
+
+* Itemization by script, Chromium-style per-cluster font fallback, the
+  `lang` attribute as shaping language, opt-in packs `fonts/tamil`
+  (+95 KB) and `fonts/devanagari` (+364 KB). The Tamil paste problem is
+  fixed when the app imports `fonts/tamil` (review/step5: before/after).
+* Verified against Chromium with the same fonts via `@font-face`: 3
+  hand-written script documents and 150 seeded random multi-script
+  documents (boxes, line breaks, line widths, heights) match exactly,
+  except one random document 1/64 px off (D32, float32 rounding). All
+  2,510 layout cases, the Latin text documents and the render goldens
+  are unchanged.
+* Found on the way and fixed (they also affect Latin text): Chromium's
+  ASCII line-break table (all 8,836 printable pairs now match), the
+  kerning dropped at the end of centered/right-aligned soft-wrapped
+  lines (3 of 6 D23 cases fixed), FreeType/HarfBuzz advance scaling.
+* Not verified: right-to-left scripts (step 6), scripts without a pack
+  (drawn as .notdef boxes, as before), font packs on real macOS/Windows
+  windows (stage 8 imports them; not run yet).
+* `RenderHTML` (no App) does not draw `<input>` values; this predates
+  the multilingual work (input text is drawn in apps).
 
 ### Tamil paste diagnosis (Phase 1)
 

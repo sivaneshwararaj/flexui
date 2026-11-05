@@ -6,9 +6,12 @@
 //    body filling the viewport, no UA styles, white canvas without
 //    background propagation);
 //  * the bundled Inter faces through @font-face (weights 1-500 Regular,
-//    501-1000 Bold, as flexui's font matching), used by every element;
+//    501-1000 Bold, as flexui's font matching), used by every element,
+//    followed by the optional font packs (fonts/*) in flexui's fallback
+//    order, so Chromium's per-cluster font fallback picks the same faces;
 //  * flexui's default style sheet (internal/render/ua.css), loaded after
 //    the base sheet so that document rules win;
+//  * the lang attribute's content language kept (-webkit-locale);
 //  * every maximal run of text and inline elements wrapped in an <x-t>
 //    element equivalent to the anonymous block flexui creates for it
 //    (spec/SUBSET.md §7.1), including the overflow / text-overflow it
@@ -19,10 +22,19 @@ const path = require('path');
 const fontDir = path.join(__dirname, '..', 'internal', 'text', 'fonts');
 const uaCSS = fs.readFileSync(path.join(__dirname, '..', 'internal', 'render', 'ua.css'), 'utf8');
 const b64 = (f) => fs.readFileSync(path.join(fontDir, f)).toString('base64');
+// Optional packs in flexui's fallback order (their Go Priority).
+const packDir = path.join(__dirname, '..', 'fonts');
+const packs = [['tamil', 'NotoSansTamil'], ['devanagari', 'NotoSansDevanagari']];
+const pb64 = (dir, f) => fs.readFileSync(path.join(packDir, dir, f)).toString('base64');
 const fontFaces = `@font-face { font-family: FlexUI; font-weight: 1 500;
   src: url(data:font/ttf;base64,${b64('Inter-Regular.ttf')}); }
 @font-face { font-family: FlexUI; font-weight: 501 1000;
-  src: url(data:font/ttf;base64,${b64('Inter-Bold.ttf')}); }`;
+  src: url(data:font/ttf;base64,${b64('Inter-Bold.ttf')}); }
+` + packs.map(([dir, name]) => `@font-face { font-family: ${name}; font-weight: 1 500;
+  src: url(data:font/ttf;base64,${pb64(dir, name + '-Regular.ttf')}); }
+@font-face { font-family: ${name}; font-weight: 501 1000;
+  src: url(data:font/ttf;base64,${pb64(dir, name + '-Bold.ttf')}); }`).join('\n');
+const families = ['FlexUI', ...packs.map(([, name]) => name)].join(', ');
 
 const base = (w, h) => `<style>
 ${fontFaces}
@@ -32,10 +44,10 @@ html { margin: 0; padding: 0; background: #fff; display: grid;
 :where(body, body *) { all: unset; display: flex; flex-direction: column;
   position: relative; box-sizing: content-box; min-width: auto; min-height: auto;
   border: 0 solid currentcolor; }
-body { font-family: FlexUI; font-size: 16px; font-weight: 400; line-height: normal; color: #000; }
-* { font-family: FlexUI !important; font-kerning: normal; font-synthesis: none;
+body { font-family: ${families}; font-size: 16px; font-weight: 400; line-height: normal; color: #000; }
+* { font-family: ${families} !important; font-kerning: normal; font-synthesis: none;
   -webkit-font-smoothing: antialiased; }
-x-t { all: unset; display: block; font-family: FlexUI !important; }
+x-t { all: unset; display: block; font-family: ${families} !important; }
 </style><style>
 /* flexui's default style sheet (internal/render/ua.css) */
 ${uaCSS}
@@ -80,6 +92,12 @@ function wrapText() {
     flush();
   };
   walk(document.body);
+  // `all: unset` in the base sheet also resets the content language an
+  // element takes from its own lang attribute (Chromium keeps it in the
+  // internal -webkit-locale property): restore it.
+  for (const e of document.querySelectorAll('[lang]')) {
+    e.style.setProperty('-webkit-locale', JSON.stringify(e.getAttribute('lang')));
+  }
   return document.fonts.ready.then(() => document.fonts.size);
 }
 

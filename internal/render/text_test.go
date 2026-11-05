@@ -27,12 +27,12 @@ var knownTextDiffs = map[string]knownText{
 	// distribution and Chromium's float steps round 1/64 px apart.
 	"nested": {"D14 sub-pixel rounding of flex shrink", 1, false},
 
-	// Seeded random inline documents: a soft line break right after
-	// "Hello," (D23); in inline_0115 it changes where the line breaks.
-	"inline_0003": {"D23 shaping at a soft line end", 64, false},
-	"inline_0043": {"D23 shaping at a soft line end", 64, false},
-	"inline_0072": {"D23 shaping at a soft line end", 64, false},
+	// Seeded random inline document: a soft line break right after
+	// "Hello," (D23) changes where the line breaks.
 	"inline_0115": {"D23 shaping at a soft line end (different break)", 0, true},
+
+	// Seeded random multi-script documents (font fallback, Noto packs).
+	"script_0125": {"D32 float32 rounding of a text width", 1, false},
 
 	// Seeded random documents (text_random_test.go).
 	"random_0001": {"D14 sub-pixel rounding of flex sizes", 2, false},
@@ -100,8 +100,13 @@ func readChromeText(t *testing.T, file string) map[string]chromeText {
 }
 
 func TestEmitText(t *testing.T) {
-	if *emitText == "" && *emitInline == "" {
-		t.Skip("no -emit-text / -emit-inline")
+	if *emitText == "" && *emitInline == "" && *emitScript == "" {
+		t.Skip("no -emit-text / -emit-inline / -emit-script")
+	}
+	if *emitScript != "" {
+		if err := writeRandomScript(*emitScript); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if *emitText != "" {
 		if err := writeRandomText(*emitText); err != nil {
@@ -121,6 +126,20 @@ func TestTextChromeInline(t *testing.T) {
 	nb, nl := 0, 0
 	for i := 0; i < randomInlineCount; i++ {
 		name, src := randomInlineDoc(i)
+		t.Run(name, func(t *testing.T) {
+			b, l := compareText(t, name, []byte(src), chrome)
+			nb, nl = nb+b, nl+l
+		})
+	}
+	t.Logf("compared %d boxes and %d lines", nb, nl)
+}
+
+// TestTextChromeScript compares the seeded random multi-script documents.
+func TestTextChromeScript(t *testing.T) {
+	chrome := readChromeText(t, "script.json")
+	nb, nl := 0, 0
+	for i := 0; i < randomScriptCount; i++ {
+		name, src := randomScriptDoc(i)
 		t.Run(name, func(t *testing.T) {
 			b, l := compareText(t, name, []byte(src), chrome)
 			nb, nl = nb+b, nl+l

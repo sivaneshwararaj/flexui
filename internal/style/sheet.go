@@ -8,6 +8,12 @@ import (
 )
 
 // Element is what selector matching needs from a document node.
+// Langer is implemented by elements that can carry a lang attribute; the
+// content language it gives is inherited like a property (HTML §3.2.6.2).
+type Langer interface {
+	Lang() (string, bool)
+}
+
 type Element interface {
 	Tag() string // lower-case
 	ID() string
@@ -373,6 +379,11 @@ func NewCascade(sheets ...*Sheet) *Cascade {
 // (sheet warnings are reported once by ParseSheet).
 func (c *Cascade) Compute(el Element, parent *Style, inline string) (Style, []Warning) {
 	s := Inherit(parent)
+	if l, ok := el.(Langer); ok {
+		if v, ok := l.Lang(); ok {
+			s.Lang = strings.TrimSpace(v)
+		}
+	}
 	var matched []*Rule
 	for i := range c.rules {
 		if c.rules[i].Sel.Matches(el) {

@@ -5,17 +5,37 @@ versioning with `v0.x` tags until the API settles.
 
 ## Unreleased
 
+### Added
+- Multi-script text: itemization by script (UAX #24, paired brackets),
+  Chromium-style font fallback per cluster, the `lang` attribute as the
+  shaping language, and opt-in font packs `fonts/tamil` (Noto Sans
+  Tamil) and `fonts/devanagari` (Noto Sans Devanagari). Checked against
+  Chromium (the packs loaded through `@font-face`) on hand-written and
+  150 seeded random multi-script documents (`testdata/text/script.json`).
+  `testdata/multilingual` pages for checking by eye.
+- Multilingual paste/copy tests (`internal/testtext` samples), Windows
+  UTF-16 clipboard conversion tests, and stage 8 on macOS and Windows: a
+  real-clipboard round trip of the same strings.
+
+### Changed
+- Glyph advances are scaled as Chromium does on Linux (FreeType
+  advances, HarfBuzz GPOS scaling, 1/65536 px); for Inter at whole-pixel
+  sizes nothing changes.
+- Line breaks between two printable ASCII characters follow Chromium's
+  own table (measured from Chromium 153 for all pairs) instead of UAX #14
+  plus the `/` and `!` tailoring.
+- Centered and right-aligned lines that end at a soft wrap drop the
+  kerning against the removed trailing space, as Chromium does (fixes 3
+  of the 6 cases of deviation D23).
+- `line-height: normal` takes the metrics of fallback fonts used on a
+  line into account.
+
 ### Fixed
 - Inputs: word movement and word deletion (Ctrl/Alt+Arrow,
   Ctrl/Alt+Backspace) treated vowel signs, viramas, combining marks and
   joiners as word breaks; words are now judged per grapheme cluster.
 - Windows clipboard read is bounded by the memory block size
   (`GlobalSize`) instead of scanning for a NUL.
-
-### Added
-- Multilingual paste/copy tests (`internal/testtext` samples), Windows
-  UTF-16 clipboard conversion tests, and stage 8 on macOS and Windows: a
-  real-clipboard round trip of the same strings.
 
 ## v0.1.0 (2026-11-05)
 

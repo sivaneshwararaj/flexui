@@ -25,14 +25,17 @@ function measure() {
     const ls = [];
     let cur = null;
     const walker = document.createTreeWalker(t, NodeFilter.SHOW_TEXT);
+    // Grapheme clusters, not code units: a range inside a cluster (a
+    // vowel sign, a virama) has no box of its own.
+    const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-      for (let i = 0; i < n.data.length; i++) {
+      for (const { segment: ch, index: i } of graphemes.segment(n.data)) {
         const rg = document.createRange();
-        rg.setStart(n, i); rg.setEnd(n, i + 1);
+        rg.setStart(n, i); rg.setEnd(n, i + ch.length);
         const rs = rg.getClientRects();
         if (!rs.length) continue; // collapsed white space
         const b = rs[0];
-        if (b.width === 0 && /\s/.test(n.data[i])) continue; // collapsed space
+        if (b.width === 0 && /\s/.test(ch)) continue; // collapsed space
         // New line: entirely below the current one, or the pen moved back
         // left: character left edges increase along a line, even when kerned
         // (lines can overlap vertically with a small line-height).
@@ -43,7 +46,6 @@ function measure() {
         cur.lastLeft = b.left;
         cur.top = Math.min(cur.top, b.top);
         cur.bottom = Math.max(cur.bottom, b.bottom);
-        const ch = n.data[i];
         cur.text += ch === '\n' ? '' : ch;
         if (!/\s/.test(ch) || ws === 'pre') { cur.x0 = Math.min(cur.x0, b.left); cur.x1 = Math.max(cur.x1, b.right); }
       }

@@ -37,7 +37,9 @@ and Windows (amd64, arm64).
 
 * Flexbox layout engine (CSS Flexbox §9), verified against Chromium on
   2,500 layout cases; text layout (bundled Inter font, shaping, wrapping,
-  inline elements, ellipsis) verified against Chromium to 1/64 px.
+  inline elements, ellipsis) verified against Chromium to 1/64 px;
+  script itemization and font fallback with opt-in Noto font packs for
+  Tamil and Devanagari ([fonts](fonts)), also checked against Chromium.
 * Painting: backgrounds, borders, rounded corners, box shadows, opacity,
   z-index stacking, clipping, images (PNG/JPEG), anti-aliased text,
   HiDPI.
@@ -74,5 +76,5 @@ data (needs node and Playwright). The project's working rules are in
 
 ## License
 
-MIT ([LICENSE](LICENSE)). The bundled Inter font is under the SIL Open
-Font License ([internal/text/fonts](internal/text/fonts)).
+MIT ([LICENSE](LICENSE)). The bundled Inter font and the optional Noto
+font packs ([fonts](fonts)) are under the SIL Open Font License.

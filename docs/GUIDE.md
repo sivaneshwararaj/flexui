@@ -263,6 +263,24 @@ Text: `font-size`, `font-weight` (> 500 is bold), `line-height`,
 `overflow: hidden` and usually `white-space: nowrap`). `font-family` is
 accepted but every family renders with the bundled Inter.
 
+**Other scripts.** Inter covers Latin, Greek and Cyrillic. For other
+scripts import a font pack once, anywhere in your program (it registers
+itself; order does not matter):
+
+```go
+import (
+	_ "github.com/sivaneshwararaj/flexui/fonts/tamil"      // Noto Sans Tamil, ~95 KB
+	_ "github.com/sivaneshwararaj/flexui/fonts/devanagari" // Noto Sans Devanagari (Hindi, Marathi, Nepali), ~365 KB
+)
+```
+
+Text is split by script and each cluster Inter lacks is drawn with the
+first pack that has it, as Chromium does. Without a pack, such text is
+drawn as boxes (the text itself is kept intact). Put `lang="mr"` etc.
+on an element for language-specific letter forms. Right-to-left
+scripts (Arabic, Hebrew) are not supported yet. See
+[fonts/README.md](../fonts/README.md).
+
 Selectors: type, `.class`, `#id`, `*`, compound, descendant (`a b`),
 child (`a > b`), lists (`a, b`), `:hover`, `:focus`, `:active`,
 `:disabled`. Specificity works as in CSS; inline `style=""` wins; no

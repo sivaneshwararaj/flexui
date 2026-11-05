@@ -119,12 +119,20 @@ func (d *Document) paintInput(c paint.Canvas, b *Box, st InputState) {
 		if ph {
 			pc = placeholderColor
 		}
-		f, size := t.RunFace(0)
-		run := &paint.GlyphRun{Font: f, Size: size, Color: pc}
+		_, size := t.RunFace(0)
+		var run *paint.GlyphRun
 		for _, g := range t.Glyphs(ln, nil) {
+			if run == nil || run.Font != g.Face {
+				if run != nil {
+					c.Glyphs(run)
+				}
+				run = &paint.GlyphRun{Font: g.Face, Size: size, Color: pc}
+			}
 			run.Glyphs = append(run.Glyphs, paint.Glyph{ID: g.ID, X: x0 + g.X, Y: top + g.Y})
 		}
-		c.Glyphs(run)
+		if run != nil {
+			c.Glyphs(run)
+		}
 	}
 	if st.Focused && st.Caret == st.Anchor {
 		cx := geom.Unit(0)

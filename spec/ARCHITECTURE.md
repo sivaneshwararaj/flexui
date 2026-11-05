@@ -37,7 +37,7 @@ Implementation (`internal/`, free to change):
 | `internal/render` | dom → cascade → layout → paint order (stacking contexts) → display list → raster. `Parse`, `Cache.Style` (sheet and text caches), `Document.Layout/Place/Paint/Draw/HitTest`, `Build`, `Render`. | all of the above |
 | `internal/edit` | Single-line text editing model (`Buffer`: graphemes, words, selection). | `go-text/typesetting/segmenter` |
 | `internal/view` | Live document between frames: staged invalidation (parse/style/layout/place/paint), retained frame, hit testing, event dispatch (bubbling) to a handler callback; interaction state (M6). | `render`, `dom` |
-| `internal/text` | Bundled Inter faces, shaping (font units), line breaking, `Text` layout (lines, intrinsic widths, ellipsis), glyph rasterizer (`paint.GlyphSource`). | `go-text/typesetting`, `geom`, `style`, `paint` |
+| `internal/text` | Bundled Inter faces and the font pack registry (`Register`, `Chain`), script itemization, fallback shaping, line breaking, `Text` layout (lines, intrinsic widths, ellipsis), glyph rasterizer (`paint.GlyphSource`). | `go-text/typesetting`, `geom`, `style`, `paint` |
 
 `examples/` is a separate module (`replace` to `../`) that uses only the
 public API, proving the library works for an external consumer:
@@ -143,12 +143,18 @@ declaration strings. Each case is checked two ways:
 
 ## Text (`internal/text/`)
 
-* `font.go`: embedded Inter faces (`ForWeight`), HarfBuzz font at scale =
-  unitsPerEm so shaped advances are integers.
+* `font.go`: embedded Inter faces (`ForWeight`), the fallback pack
+  registry (`Register` from `fonts/*` init functions, frozen at first
+  use; `Chain(weight)` = Inter + packs by priority), HarfBuzz font at
+  scale = unitsPerEm; `shape` converts to 1/65536 px the way Chromium
+  scales (FreeType advances + HarfBuzz GPOS scaling).
+* `brackets.go`, `asciibreak.go`: data for itemization (paired brackets)
+  and Chromium's ASCII line-break table.
 * `coverage.go`: workaround for a go-text digest bug (rewrites range
   coverages to glyph lists after parsing; `TestKerning` guards it).
-* `layout.go`: `New(raw, Params)` processes white space, shapes, finds
-  break segments and pen positions; `MinContent`/`MaxContent`,
+* `layout.go`: `New(raw, Params)` processes white space, itemizes by
+  script (`itemize`), shapes each item with per-cluster font fallback
+  (`shapeFallback`), finds break segments (`segment`) and pen positions; `MinContent`/`MaxContent`,
   `Layout(width)` (cached last width) → `Block` of `Line`s, `Height`,
   `Glyphs(line)`. The Chromium rounding rules are in `lineSpan` / `span`.
 * `mask.go`: glyph outline → coverage mask (integer flattening and
@@ -156,8 +162,10 @@ declaration strings. Each case is checked two ways:
 * Chromium comparison: `scripts/flexui-page.cjs` loads the fonts with
   `@font-face` and wraps text runs in `<x-t>` (the anonymous box);
   `scripts/textcheck.cjs` dumps boxes and lines; `internal/render/text_test.go`
-  compares (docs in `testdata/text/docs`, 300 seeded random documents in
-  `text_random_test.go`).
+  compares (docs in `testdata/text/docs`, 300 random Latin, 150 random
+  inline and 150 random multi-script documents in `text_random_test.go`).
+  The harness lists the font packs after Inter in the same order, so
+  Chromium's fallback picks the same faces.
 
 ## App runtime (`flexui.go`, `internal/view/`)
 

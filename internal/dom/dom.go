@@ -158,6 +158,16 @@ func (n *Node) Attr(name string) string {
 	return ""
 }
 
+// Lang implements style.Langer: the element's own lang attribute.
+func (n *Node) Lang() (string, bool) {
+	for _, a := range n.Attrs {
+		if a.Name == "lang" {
+			return a.Value, true
+		}
+	}
+	return "", false
+}
+
 // Tag implements style.Element.
 func (n *Node) Tag() string { return n.TagName }
 

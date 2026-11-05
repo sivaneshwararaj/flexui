@@ -16,6 +16,10 @@
 - [counter](examples/counter): minimal stateful app, `-window` for macOS/Windows
 - [Go examples](example_test.go): RenderHTML, App with headless session, controlled and uncontrolled inputs
 
+## Fonts
+
+- [Font packs](fonts/README.md): opt-in fallback fonts for other scripts (`import _ "github.com/sivaneshwararaj/flexui/fonts/tamil"`, `fonts/devanagari`)
+
 ## Platforms
 
 - [macOS backend](platform/darwin/README.md)

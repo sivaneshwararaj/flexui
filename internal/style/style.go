@@ -52,6 +52,7 @@ type Style struct {
 	// inherit; TextOverflow does not. Used from M4 on.
 	Color        Color
 	FontFamily   string // raw comma-separated list, case preserved
+	Lang         string // content language: the inherited lang attribute (not a CSS property)
 	FontSize     geom.Unit
 	FontWeight   int16 // 100..900
 	LineHeight   LineHeight
@@ -118,6 +119,7 @@ func Inherit(parent *Style) Style {
 	if parent != nil {
 		s.Color = parent.Color
 		s.FontFamily = parent.FontFamily
+		s.Lang = parent.Lang
 		s.FontSize = parent.FontSize
 		s.FontWeight = parent.FontWeight
 		s.LineHeight = parent.LineHeight

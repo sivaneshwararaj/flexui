@@ -9,6 +9,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sivaneshwararaj/flexui/platform"
@@ -77,7 +78,14 @@ func center(t *testing.T, a *App, id string) (float64, float64) {
 // renderer is deterministic), or rewrites it with -update.
 func checkGolden(t *testing.T, name string, img *image.RGBA) {
 	t.Helper()
-	path := filepath.Join("testdata", "app", name+".png")
+	checkGoldenAt(t, filepath.Join("testdata", "app", name+".png"), img)
+}
+
+// checkGoldenAt compares img with the PNG at path (written with -update;
+// a mismatch is saved next to it in _failed/).
+func checkGoldenAt(t *testing.T, path string, img *image.RGBA) {
+	t.Helper()
+	name := strings.TrimSuffix(filepath.Base(path), ".png")
 	if *update {
 		os.MkdirAll(filepath.Dir(path), 0o755)
 		f, _ := os.Create(path)
@@ -95,8 +103,8 @@ func checkGolden(t *testing.T, name string, img *image.RGBA) {
 		t.Fatal(err)
 	}
 	if diff := pixelDiff(img, want); diff != "" {
-		os.MkdirAll(filepath.Join("testdata", "app", "_failed"), 0o755)
-		g, _ := os.Create(filepath.Join("testdata", "app", "_failed", name+".png"))
+		os.MkdirAll(filepath.Join(filepath.Dir(path), "_failed"), 0o755)
+		g, _ := os.Create(filepath.Join(filepath.Dir(path), "_failed", name+".png"))
 		png.Encode(g, img)
 		g.Close()
 		t.Errorf("%s: %s", name, diff)

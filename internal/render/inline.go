@@ -64,7 +64,7 @@ func outerOf(outer []text.Style, inInline bool) []text.Style {
 
 // textStyle is the layout part of a computed style.
 func textStyle(st *style.Style) text.Style {
-	return text.Style{Weight: int(st.FontWeight), Size: st.FontSize, LineHeight: st.LineHeight}
+	return text.Style{Weight: int(st.FontWeight), Size: st.FontSize, LineHeight: st.LineHeight, Lang: st.Lang}
 }
 
 // inlineBox makes the anonymous box for a group of text nodes and inline
@@ -217,6 +217,7 @@ func (b *Box) paintText(c paint.Canvas) {
 	var gs []text.PlacedGlyph
 	var run *paint.GlyphRun
 	cur := -2
+	var curFace *text.Face
 	flush := func() {
 		if run != nil && len(run.Glyphs) > 0 && run.Color.A > 0 {
 			c.Glyphs(run)
@@ -226,21 +227,20 @@ func (b *Box) paintText(c paint.Canvas) {
 	for i := range blk.Lines {
 		gs = t.Glyphs(&blk.Lines[i], gs[:0])
 		for _, g := range gs {
-			if g.Run != cur || run == nil {
+			if g.Run != cur || g.Face != curFace || run == nil {
 				flush()
-				cur = g.Run
-				var f *text.Face
+				cur, curFace = g.Run, g.Face
 				var size geom.Unit
 				col := b.Style.Color
 				if g.Run < 0 {
-					f, size = t.StrutFace()
+					_, size = t.StrutFace()
 				} else {
-					f, size = t.RunFace(g.Run)
+					_, size = t.RunFace(g.Run)
 					if o := b.runOwner[g.Run]; o != nil {
 						col = o.Style.Color
 					}
 				}
-				run = &paint.GlyphRun{Font: f, Size: size, Color: color(col)}
+				run = &paint.GlyphRun{Font: g.Face, Size: size, Color: color(col)}
 			}
 			run.Glyphs = append(run.Glyphs, paint.Glyph{ID: g.ID, X: b.Abs.X + g.X, Y: b.Abs.Y + g.Y})
 		}
@@ -263,6 +263,8 @@ func textKey(runs []text.Run, p text.Params) string {
 		k.WriteString(strconv.Itoa(int(s.LineHeight.Kind)))
 		k.WriteByte(',')
 		k.WriteString(strconv.FormatInt(int64(s.LineHeight.V), 10))
+		k.WriteByte(',')
+		k.WriteString(strconv.Quote(s.Lang))
 	}
 	st(p.Style)
 	k.WriteString("|" + strconv.Itoa(int(p.WhiteSpace)) + strconv.Itoa(int(p.Align)) + strconv.FormatBool(p.Ellipsis))

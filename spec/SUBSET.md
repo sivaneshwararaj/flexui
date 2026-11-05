@@ -604,9 +604,14 @@ clip. A 1:1 mapping copies source pixels exactly.
   `\n`; a final newline does not start an empty line. Tabs advance to the
   next multiple of 8 space widths from the start of the line.
 * Break opportunities: Unicode line breaking (UAX #14, via
-  `go-text/typesetting/segmenter`), tailored to match Chromium's ICU rules:
-  no break after `/` or `!` directly followed by the next word. Newlines
-  are forced breaks with `pre` and `pre-wrap`. `nowrap` and `pre` never
+  `go-text/typesetting/segmenter`), except between two printable ASCII
+  characters, where Chromium uses its own table instead of ICU
+  (TextBreakIterator's ShouldBreakAfter): flexui uses the same table,
+  measured from Chromium 153 for all 8836 pairs (`internal/text/asciibreak.go`;
+  e.g. no break in `and/or` or `world!x`, a break in `"x"[y]`), and
+  Chromium's rule that `-` before a digit breaks only after a letter or
+  digit (`ABCD-1234`, not `-1`). Newlines are forced breaks with `pre`
+  and `pre-wrap`. `nowrap` and `pre` never
   wrap. A word wider than the line overflows (`overflow-wrap: normal`).
 * Lines are filled greedily: the next word is added if the line, without
   its trailing spaces, still fits the content width.
@@ -616,29 +621,57 @@ clip. A 1:1 mapping copies source pixels exactly.
   **conditionally hang**: they count when they fit (CSS Text 3 §4.1.3).
 * `text-align` offsets each line within the box's content width; centering
   rounds down to 1/64 px. Lines wider than the box start at its left
-  edge.
+  edge. With `center` or `right`, a line that ends at a soft wrap after
+  spaces has them removed and its last piece shaped again without them
+  (Chromium's RemoveTrailingCollapsibleSpace), which drops kerning against
+  the space ("Hello," "x."). If the line then no longer fits, its last
+  word moves to the next line; a single word keeps its kerned width.
 * `text-overflow: ellipsis` (with D24): a line wider than the box is cut at
   the last character boundary for which the content plus `…` (U+2026)
   fits, and `…` is drawn after it.
 
 ### 7.3 Fonts, shaping and metrics
 
-* One family is bundled: **Inter 4.1** Regular and Bold (static TrueType,
+* One family is built in: **Inter 4.1** Regular and Bold (static TrueType,
   SIL Open Font License, `internal/text/fonts/OFL.txt`). System fonts are
   never read. Every `font-family` value uses it (no warning: app CSS often
   lists stacks). `font-weight` above 500 selects Bold, otherwise Regular,
   which is CSS font matching for faces at 400 and 700. No synthetic bold
   or italics.
+* **Font packs** (opt-in Go packages, `fonts/README.md`) add fallback
+  faces: `fonts/tamil` (Noto Sans Tamil), `fonts/devanagari` (Noto Sans
+  Devanagari). Importing one registers it; the fallback chain is Inter,
+  then the registered packs in a fixed priority order (Tamil,
+  Devanagari, ...), independent of import order. Packs must be
+  registered before the first layout (imports do that).
+* **Itemization** (UAX #24, as Chromium's ScriptRunIterator): the text
+  is split into items of one script; characters of the Common and
+  Inherited scripts (spaces, digits, punctuation, marks, joiners) belong
+  to the item they are in, at the start of a line to the first strong
+  script after them, and a closing paired bracket (Bidi_Paired_Bracket)
+  to the item of its opening bracket. An item is also split at style
+  (size, weight, language) changes, tabs and forced breaks.
+* **Font fallback** (as Chromium's HarfBuzzShaper): an item is shaped
+  with the first face of the chain; each maximal range of clusters that
+  contain a .notdef glyph is shaped again with the next face, and so on.
+  The last face keeps its .notdef glyphs (drawn as boxes).
 * Shaping: HarfBuzz (go-text port) with default features (kerning,
-  ligatures, contextual alternates), script Latin, language `en`,
-  left-to-right. Bidi and complex scripts are not supported. The text is
-  shaped in **font units** (integer advances), so all later steps are
-  exact integer arithmetic.
-* Widths (matching Chromium to 1/64 px): a line's width is its advance
-  sum × size / unitsPerEm rounded **up** to 1/64 px. For min-content, a
-  word's width is measured as Chromium does: both ends are rounded up to
-  1/64 px in the coordinates of its hard line, and the width is their
-  difference.
+  ligatures, contextual alternates), the item's script, and the content
+  language from the inherited `lang` attribute (`en` without one), which
+  selects language forms (e.g. Marathi and Nepali letter shapes in
+  Devanagari). Left to right only: bidi is not supported yet.
+* Advances are kept in 1/65536 px, scaled as Chromium does on Linux:
+  the face's advance as FreeType computes it (x_scale = FT_DivFix(size in
+  26.6, unitsPerEm); advance = FT_MulDiv(units, x_scale, 64)), plus GPOS
+  adjustments and offsets as HarfBuzz scales them ((v × ((size in 16.16
+  << 16) / unitsPerEm) + 32768) >> 16). For Inter at whole-pixel sizes
+  this is exact.
+* Widths (matching Chromium to 1/64 px): a line's width is the sum, over
+  its pieces (the text of one element between tabs and forced breaks,
+  Chromium's inline items; script changes do not split them), of the
+  piece's advance rounded **up** to 1/64 px. For min-content, a word's
+  width is measured as Chromium does: both ends are rounded up to 1/64 px
+  in the coordinates of its hard line, and the width is their difference.
 * `font-size` is a length in 1/64 px, so sizes like `13.3px` are
   quantized (to 13.296875px).
 * `line-height: normal` is round(ascent) + round(descent) + round(lineGap)
@@ -647,7 +680,10 @@ clip. A 1:1 mapping copies source pixels exactly.
   1/64 px; a length is used as is. The baseline is the line top plus
   round(ascent) plus half the leading, the leading being line height −
   (round(ascent) + round(descent)) and half of it rounded down to a whole
-  pixel.
+  pixel. With `line-height: normal`, every fallback face used on a line
+  also takes part with its own rounded ascent, descent and line height
+  (as in Chromium: a Tamil word makes a 16px line 22px tall, Devanagari
+  23px); with any other line-height only the primary face counts.
 
 ### 7.4 Glyph rendering
 
@@ -669,9 +705,10 @@ clip. A 1:1 mapping copies source pixels exactly.
 |---|---|---|
 | D21 | Glyph anti-aliasing differs from Chromium (FreeType coverage with Skia's luminance-dependent contrast/gamma "preblend"). Glyph positions agree; individual edge pixels differ, by up to about 50 of 255 levels, mean error about 0.3-0.5 levels per text document. | Integer-only own rasterizer; deterministic everywhere. |
 | D22 | Layout is independent of the device scale. Chromium rounds `line-height: normal` metrics in device pixels, so at 2x its lines can be up to 0.5 px (one device pixel) shorter. | Same layout on every display; HiDPI is a paint-time scale only. |
-| D23 | Shaping at a soft line end: Chromium sometimes measures a line that ends at a soft break (typically after "Hello,") about 100 font units wider than its shaped advance; we could not derive when. Lines then differ by under 1 px, and rarely the break moves (6 of 450 random documents). | Rare; under 1 px except for one changed break. |
+| D23 | Shaping at a soft line end. Chromium removes the trailing spaces of a soft-wrapped line with `text-align` center or right and shapes the end of the line again without them, which drops kerning against the space (e.g. "Hello," or "." followed by a space): this is now emulated (§7.2), including Chromium's moving the last word down when the line no longer fits, and fixed 3 of the 6 cases. The remaining 3 (2 random Latin documents within 0.5 px, 1 with a different break) involve `text-overflow: ellipsis` / nowrap or flex items whose width is the text's own; we could not derive those. | Rare; under 1 px except for one changed break. |
 | D24 | Text in an element with `text-overflow: ellipsis` and clipping `overflow` ellipsizes (§7.1); in CSS it would not, because the anonymous box does not inherit them. | What authors expect; Chromium comparisons wrap text runs in an equivalent block that takes these properties. |
 | D30 | `em` and `i` are not italic, and `font-style` is not supported: only upright Regular and Bold faces are bundled. | Binary size; add an italic face later. |
+| D32 | Float rounding of text widths: Chromium adds glyph advances as float32 (per shaping run, then per item) before rounding a piece up to 1/64 px. When the exact width is within float32 precision (a few 1/65536 px) above a 1/64 px boundary, Chromium's width is 1/64 px smaller. Only fonts whose scaled advances are not exact in float32 are affected (the Noto packs, units per em 1000); Inter at whole-pixel sizes is exact. Seen in 1 of 150 random multi-script documents. | Emulating float32 summation in Chromium's run order costs more than a 1/64 px difference is worth. |
 
 ## 8. Interaction (M5, M6)
 
