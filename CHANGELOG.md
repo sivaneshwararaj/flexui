@@ -6,6 +6,10 @@ versioning with `v0.x` tags until the API settles.
 ## Unreleased
 
 ### Added
+- IME composition model: `platform.EventCompose`, `EventComposeCommit`,
+  `EventComposeCancel`, `platform.CaretRecter` / `App.CaretRect`,
+  `Ctx.Composing`, headless `Compose`/`Commit`/`CancelComposition`;
+  marked text in the value and underlined, as in Chromium.
 - Inputs: right-to-left inputs (`dir="rtl"`: right-aligned, arrow keys
   reversed as in Chromium), bidi-reordered text with multi-rectangle
   selections in every input.

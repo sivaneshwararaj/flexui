@@ -1,8 +1,17 @@
 # Status
 
-Last updated after step 7 of the multilingual work (editing in
-inputs). Next steps: IME composition events (step 8), IME on macOS and
-Windows (step 9), CJK (step 10).
+Last updated after step 8 of the multilingual work (IME composition
+model, headless). Next steps: IME on macOS and Windows (step 9, staged),
+CJK (step 10).
+
+### IME composition (step 8)
+
+* Composition events in the platform interface, marked text in the
+  value (as Chromium, measured with CDP), underline, caret rectangle
+  query, commit on blur/press; headless test replaying the Chromium
+  session (`TestComposition`, `testdata/multilingual/ime_*.png`).
+* Not done: clause underlines, IME selection highlight, composition
+  event handlers; the platforms do not send these events yet (step 9).
 
 ### Editing (step 7)
 

@@ -29,8 +29,8 @@ machine (local Claude Code or a cloud session). Read it first, then
 | 5. Itemization, font fallback, Noto Tamil/Devanagari packs | done (commit 43db1cd), matches Chromium |
 | 6. Bidi (UAX #9), `dir`/`direction`, RTL alignment, Arabic/Hebrew packs | done (spec/SUBSET.md §7.6; D33 lists the residuals) |
 | 7. Cluster-aware caret/selection/backspace, bidi movement | done (logical movement as Chromium; see spec/STATUS.md) |
-| 8. IME composition events + caret rect (headless) | **next** |
-| 9. IME on macOS (NSTextInputClient) and Windows (IMM32), staged | not started |
+| 8. IME composition events + caret rect (headless) | done (spec/SUBSET.md §8.7) |
+| 9. IME on macOS (NSTextInputClient) and Windows (IMM32), staged | **next** |
 | 10. CJK font pack (opt-in) + UAX #14 for ideographs | not started |
 | `testdata/multilingual` (Tamil, Hindi, mixed, Arabic, Hebrew, bidi mixed done; long paragraphs and CJK to add) | partly |
 | Final summary to the user (changed / unverified / weakest) | at the end |
@@ -38,19 +38,33 @@ machine (local Claude Code or a cloud session). Read it first, then
 Waiting on the user: stage 8 (multilingual clipboard) on macOS and
 Windows: `go run ./platform/<darwin|windows>/stages/stage8`.
 
-## Step 8 notes (next)
+## Step 9 notes (next)
 
-* Add to `platform.Event`: composition kinds (start, update with the
-  marked text, marked range/selection and underline style, commit,
-  cancel). Add a caret-rectangle query the platform can call (the
-  focused input's caret rect in window coordinates) so the OS candidate
-  window can be placed.
-* `internal/view`: an input in composition shows the marked text at the
-  caret, underlined, not yet in the value (no `input` event until
-  commit; Chromium does fire `input` during composition with
-  `isComposing` — verify in Chromium before choosing).
-* Headless: `headless.Session` methods to send composition events;
-  goldens of the marked text.
+* macOS (`platform/darwin`): the view class (FlexUIView, objc via
+  purego) must adopt NSTextInputClient: `insertText:replacementRange:`
+  (commit; also plain typing), `setMarkedText:selectedRange:replacementRange:`
+  (EventCompose; text may be NSAttributedString), `unmarkText`,
+  `hasMarkedText`, `markedRange`, `selectedRange`,
+  `firstRectForCharacterRange:actualRange:` (from App.CaretRect, converted
+  to screen coordinates, y flipped), `validAttributesForMarkedText`,
+  `attributedSubstringForProposedRange:actualRange:` (may return nil),
+  `characterIndexForPoint:`, `doCommandBySelector:`; keyDown must call
+  `interpretKeyEvents:`. Currently keys_darwin.go sends EventText from
+  NSEvent characters.
+* Windows (`platform/windows`): WM_IME_STARTCOMPOSITION /
+  WM_IME_COMPOSITION (GCS_COMPSTR with ImmGetCompositionStringW, GCS_CURSORPOS;
+  GCS_RESULTSTR for commit) / WM_IME_ENDCOMPOSITION; position the
+  candidate window with ImmSetCompositionWindow / ImmSetCandidateWindow
+  from App.CaretRect (physical pixels). imm32.dll via LazyProc.
+* Staged commands stage9 on both OSes with EXPECT/RESULT and -debug;
+  README lists untested parts. Do not claim it works.
+
+## Step 8 summary (done)
+
+* platform.EventCompose/Commit/Cancel, CaretRecter; view.Compose/
+  Commit/CancelComposition/CaretRect; render underline (MarkStart/End);
+  App.CaretRect; Ctx.Composing; headless Session methods;
+  TestComposition replays the Chromium-measured sequence.
 
 ## Step 7 summary (done)
 

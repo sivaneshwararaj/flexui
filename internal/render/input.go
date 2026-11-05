@@ -29,6 +29,9 @@ type InputState struct {
 	Caret, Anchor int       // rune indices; selection between them
 	Focused       bool      // draw the caret and selection
 	ScrollX       geom.Unit // horizontal scroll of the text
+	// MarkStart, MarkEnd: the IME marked text (rune indices), underlined;
+	// equal when there is no composition.
+	MarkStart, MarkEnd int
 }
 
 var (
@@ -84,6 +87,21 @@ func (d *Document) InputCaretX(n *dom.Node, s string, i int) (x, width geom.Unit
 		return off, b.contentBox().W
 	}
 	return off + t.X(ln, i), b.contentBox().W
+}
+
+// InputCaretRect returns the caret rectangle of input n with text s and
+// the caret before rune i, scrolled by scrollX, in document coordinates.
+func (d *Document) InputCaretRect(n *dom.Node, s string, i int, scrollX geom.Unit) geom.Rect {
+	b := d.boxes[n]
+	if b == nil || b.Lay == nil {
+		return geom.Rect{}
+	}
+	cb := b.contentBox()
+	t, ln := d.inputText(b, s)
+	x, _ := d.InputCaretX(n, s, i)
+	top := cb.Y + (cb.H-ln.Height)/2
+	asc, desc := t.Ascent(), t.Descent()
+	return geom.Rect{X: cb.X - scrollX + x, Y: top + ln.Baseline - asc, W: geom.Px(1), H: asc + desc}
 }
 
 // InputScrollRange returns the range of horizontal scroll offsets that
@@ -158,6 +176,13 @@ func (d *Document) paintInput(c paint.Canvas, b *Box, st InputState) {
 		}
 		if run != nil {
 			c.Glyphs(run)
+		}
+	}
+	if !ph && st.MarkEnd > st.MarkStart {
+		// The marked text of an IME composition: a 1px underline in the
+		// text color, 2px below the baseline.
+		for _, sp := range t.Spans(ln, st.MarkStart, st.MarkEnd) {
+			c.FillRRect(paint.Rect(geom.Rect{X: x0 + sp[0], Y: top + ln.Baseline + geom.Px(2), W: sp[1] - sp[0], H: geom.Px(1)}), color(col))
 		}
 	}
 	if st.Focused && st.Caret == st.Anchor {

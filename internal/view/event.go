@@ -14,7 +14,9 @@ type Event struct {
 	X, Y    geom.Unit // pointer position (pointer events)
 	Key     string    // key name (key events)
 	Value   string    // the input's text (input, change, and key events on inputs)
-	Mods    uint8     // modifier keys (key events)
+	// Composing is set on input events during an IME composition.
+	Composing bool
+	Mods      uint8 // modifier keys (key events)
 	// Prevented is set by a handler to suppress the default action (for
 	// keydown: focus traversal and activation).
 	Prevented bool
@@ -100,6 +102,7 @@ func (v *View) PointerMove(x, y geom.Unit) {
 // PointerDown handles a primary-button press at (x, y): :active, focus,
 // and the start of a click or drag.
 func (v *View) PointerDown(x, y geom.Unit) {
+	v.endComposition(v.focus) // a press commits the marked text, as in browsers
 	v.pointer, v.hasPointer = geom.Point{X: x, Y: y}, true
 	v.down = v.hit(x, y)
 	v.downAt = geom.Point{X: x, Y: y}

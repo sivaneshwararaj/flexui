@@ -146,3 +146,49 @@ func TestRTLInput(t *testing.T) {
 		t.Errorf("mixed ltr input: caret %d after 4 ArrowRight, want 4", c)
 	}
 }
+
+// TestComposition replays an IME session measured in Chromium 153 (CDP
+// Input.imeSetComposition / insertText on <input value="ab">): the marked
+// text is part of the value and every update sends an input event; the
+// commit replaces it; a cancel removes it.
+func TestComposition(t *testing.T) {
+	var log []string
+	app := New(Options{Width: 300, Height: 60})
+	app.SetView(`<input id="i" value="ab" oninput="In">`, `body { padding: 12px; } input { width: 260px; }`)
+	app.Handle("In", func(c *Ctx) { log = append(log, fmt.Sprintf("%s/%v", c.Value, c.Composing)) })
+	s := headless.Start(app)
+	s.Click(center(t, app, "i"))
+	s.Key("End", 0)
+	s.Compose("k", 1)
+	s.Compose("か", 1)
+	s.Compose("かn", 2)
+	if got := app.Value("i"); got != "abかn" {
+		t.Errorf("during composition: value %q (Chromium: abかn)", got)
+	}
+	checkGoldenAt(t, filepath.Join("testdata", "multilingual", "ime_marked.png"), s.Frame())
+	x, y, w, h, ok := app.CaretRect()
+	bx, by, bw, bh, _ := app.Bounds("i")
+	if !ok || w != 1 || h <= 0 || x < bx || x > bx+bw || y < by || y+h > by+bh {
+		t.Errorf("caret rect %v %v %v %v %v outside the input %v %v %v %v", x, y, w, h, ok, bx, by, bw, bh)
+	}
+	s.Commit("かん")
+	if got := app.Value("i"); got != "abかん" {
+		t.Errorf("after commit: %q", got)
+	}
+	checkGoldenAt(t, filepath.Join("testdata", "multilingual", "ime_committed.png"), s.Frame())
+	s.Compose("x", 1)
+	s.CancelComposition()
+	if got := app.Value("i"); got != "abかん" {
+		t.Errorf("after cancel: %q", got)
+	}
+	want := "[abk/true abか/true abかn/true abかん/false abかんx/true abかん/false]"
+	if fmt.Sprint(log) != want {
+		t.Errorf("input events %v\n want %s", log, want)
+	}
+	// A press elsewhere commits marked text as it is.
+	s.Compose("y", 1)
+	s.Click(5, 5)
+	if got := app.Value("i"); got != "abかんy" {
+		t.Errorf("press during composition: %q", got)
+	}
+}

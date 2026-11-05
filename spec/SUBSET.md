@@ -915,11 +915,33 @@ clip. A 1:1 mapping copies source pixels exactly.
   line's start or end side. Clusters and Backspace behavior were checked
   against Chromium for Devanagari, Tamil, Arabic, Hebrew, combining
   accents and emoji (`internal/edit` TestChromiumEditing).
-* Not supported yet: IME composition (macOS step, M8), undo, double-click
+* Not supported yet: undo, double-click
   word selection, autoscroll while drag-selecting, `maxlength`,
   `readonly`, password fields. **D31**: the caret does not blink (frames
   are deterministic; a platform may add blinking later).
 
+
+### 8.7 IME composition
+
+Measured in Chromium 153 (`<input>`, CDP `Input.imeSetComposition` and
+`insertText`) and matched:
+
+* Platforms send `EventCompose` (marked text, caret within it),
+  `EventComposeCommit` (final text) and `EventComposeCancel`
+  (`headless.Session.Compose`, `Commit`, `CancelComposition`).
+* The marked text is part of the input's value while composing (it
+  replaces the selection when the composition starts); every update
+  sends an `input` event with `Ctx.Composing` set. The commit replaces
+  the marked text and sends an `input` event (Chromium's last one has
+  `isComposing` set and is followed by `compositionend`; flexui has no
+  composition events for handlers). A cancel removes the marked text.
+* Focus moving away or a pointer press commits the marked text as it is.
+* The marked text is drawn with a 1px underline in the text color.
+* `App.CaretRect()` (`platform.CaretRecter`) gives the focused input's
+  caret rectangle in logical pixels, for the platform's candidate window.
+* Not supported: per-clause underlines (thick/thin) and the IME's own
+  selection highlight within the marked text; `compositionstart` /
+  `compositionend` handlers.
 ## 5. Verification
 
 Layout behavior is checked against Chromium:

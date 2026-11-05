@@ -90,6 +90,9 @@ type Ctx struct {
 	// Value is the text of the input the event is about (input, change,
 	// and key events in an input).
 	Value string
+	// Composing is true for input events during an IME composition: Value
+	// then includes the marked (not yet committed) text, as in browsers.
+	Composing bool
 }
 
 // App returns the application the event belongs to.
@@ -270,7 +273,23 @@ func (a *App) Event(e platform.Event) {
 		a.view.KeyUp(e.Key)
 	case platform.EventText:
 		a.view.Text(e.Text)
+	case platform.EventCompose:
+		a.view.Compose(e.Text, e.SelStart)
+	case platform.EventComposeCommit:
+		a.view.Commit(e.Text)
+	case platform.EventComposeCancel:
+		a.view.CancelComposition()
 	}
+}
+
+// CaretRect implements platform.CaretRecter: the caret of the focused
+// input in logical pixels, for placing an IME candidate window. ok is
+// false when no input is focused.
+func (a *App) CaretRect() (x, y, w, h float64, ok bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	r, ok := a.view.CaretRect()
+	return r.X.Float(), r.Y.Float(), r.W.Float(), r.H.Float(), ok
 }
 
 // Value returns the current text of the <input> with the given id, as
@@ -329,7 +348,7 @@ func (a *App) call(ev *view.Event) bool {
 		return false
 	}
 	c := &Ctx{app: a, ev: ev, Event: ev.Type, ID: ev.Current.ID(), TargetID: ev.Target.ID(),
-		X: ev.X.Float(), Y: ev.Y.Float(), Key: ev.Key, Mods: ev.Mods, Value: ev.Value}
+		X: ev.X.Float(), Y: ev.Y.Float(), Key: ev.Key, Mods: ev.Mods, Value: ev.Value, Composing: ev.Composing}
 	h(c)
 	a.dirty.Store(true)
 	return c.stop

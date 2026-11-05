@@ -33,6 +33,14 @@ const (
 	EventBlur
 	EventClose
 	EventPointerLeave // the pointer left the surface
+	// IME composition (spec/SUBSET.md §8.7). EventCompose starts or
+	// updates the marked (uncommitted) text: Text, with the caret at
+	// SelStart and the IME's selection up to SelEnd (rune indices into
+	// Text). EventComposeCommit replaces the marked text with Text and
+	// ends the composition; EventComposeCancel removes it.
+	EventCompose
+	EventComposeCommit
+	EventComposeCancel
 )
 
 // Event is a platform-independent input event. Coordinates are in logical
@@ -43,10 +51,13 @@ type Event struct {
 	DX, DY float64 // wheel delta in logical pixels; positive DY scrolls down
 	Button int
 	Key    string // key name for key events: "Tab", "Enter", " ", "Escape", "a", ...
-	Text   string // committed text for EventText
-	Mods   uint8  // ModShift | ModCtrl | ModAlt | ModMeta
-	Width  int    // new size for EventResize
-	Height int
+	Text   string // committed text for EventText, marked text for EventCompose
+	// SelStart, SelEnd: the caret and selection within the marked text
+	// of EventCompose (rune indices).
+	SelStart, SelEnd int
+	Mods             uint8 // ModShift | ModCtrl | ModAlt | ModMeta
+	Width            int   // new size for EventResize
+	Height           int
 }
 
 // Modifier key bits for Event.Mods.
@@ -67,6 +78,13 @@ type AppHandler interface {
 }
 
 // Platform runs an AppHandler on some kind of surface.
+// CaretRecter is implemented by apps (flexui.App) whose focused input
+// can report its caret rectangle, in logical pixels from the window's
+// top-left; platforms place the IME candidate window next to it.
+type CaretRecter interface {
+	CaretRect() (x, y, w, h float64, ok bool)
+}
+
 type Platform interface {
 	Run(cfg Config, app AppHandler) error
 }

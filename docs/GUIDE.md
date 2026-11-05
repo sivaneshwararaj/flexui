@@ -218,6 +218,10 @@ new value to replace the text programmatically. `placeholder` shows when
 empty. `disabled` makes it read-only and unfocusable. Editing keys:
 arrows (Alt/Ctrl = word, Meta = line), Home/End, Backspace/Delete,
 Ctrl/Meta+A/C/X/V; the pointer places the caret and drag-selects.
+During IME composition (Japanese, Chinese, Korean input), the marked
+text is already part of the value and `oninput` runs with
+`c.Composing == true`; skip expensive work (search, validation) until
+an event with `Composing == false`.
 In headless tests type with `s.Type("text")` (committed text) and use
 `s.Key(name, mods)` for editing keys.
 

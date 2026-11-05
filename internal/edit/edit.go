@@ -284,3 +284,17 @@ func (b *Buffer) SetCaret(p int, extend bool) {
 
 // Boundaries returns the grapheme cluster boundaries (for hit testing).
 func (b *Buffer) Boundaries() []int { return b.bounds }
+
+// Replace replaces runes [s, e) with str (sanitized) without moving the
+// selection logic (the caller sets the caret) and returns the number of
+// runes inserted. It is used for IME marked text.
+func (b *Buffer) Replace(s, e int, str string) int {
+	ins := []rune(sanitize(str))
+	s, e = max(0, min(s, len(b.text))), max(0, min(e, len(b.text)))
+	t := make([]rune, 0, len(b.text)-(e-s)+len(ins))
+	t = append(append(append(t, b.text[:s]...), ins...), b.text[e:]...)
+	b.text = t
+	b.reindex()
+	b.Caret, b.Anchor = min(b.Caret, len(t)), min(b.Anchor, len(t))
+	return len(ins)
+}
