@@ -37,7 +37,8 @@ machine (local Claude Code or a cloud session). Read it first, then
 
 macOS results (user): stage 6 with font packs and stage 8 pass; stage 9
 partial (no `compose` RESULT lines yet: type with the Japanese input
-method, not paste). Windows stages 8 and 9 not run.
+method, not paste). `stage9 -auto` checks the IME methods without a
+keyboard (sends the input-method messages itself). Windows stages 8 and 9 not run.
 
 Waiting on the user (run on each OS, send the RESULT lines):
 `go run ./platform/<darwin|windows>/stages/stage8` (multilingual
