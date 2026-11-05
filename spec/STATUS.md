@@ -16,6 +16,30 @@ stage 6 again on macOS.
 * Line fitting now follows Chromium's breaker for the last piece of a
   line (exact advance), which also fixed two older differing breaks.
 
+### Memory (2026-11-05)
+
+* Font pack faces are parsed lazily (spec/SUBSET.md §7.3). Showcase
+  release build on macOS arm64 at start: 99 MB → 85 MB footprint (Go heap
+  51 → 38 MB). Remaining: frame buffers (~8 MB each at 2x), about 22 MB
+  of native allocations and the window's backing store.
+* The 22 MB (investigated with footprint, heap, malloc_history, vmmap):
+  `present()` copies each frame into a new CFData (7.5 MB at 860x560 @2x);
+  one copy is live (the layer's CGImage) and macOS's allocator keeps
+  about two freed copies cached. CoreAnimation holds a further shared copy
+  (7.6 MB, "CoreAnimation" SM=SHM) for the window server. Tried and
+  reverted: a pool of two long-lived no-copy buffers
+  (CFDataCreateWithBytesNoCopy, reuse when CFGetRetainCount is 1) works
+  (249 frames, 2 buffers) but measured the same footprint (77-85 MB vs
+  77-78 MB, 3 runs each, 200 timed redraws), and BGRA pixels did not avoid
+  any copy. A real reduction needs IOSurface-backed presentation
+  (CoreAnimation reads the surface directly): not done, and needs
+  checking by eye on a Mac (the agent's session cannot capture the
+  screen).
+* `App.Invalidate` from another goroutine does not wake the macOS loop:
+  the window repaints only on the next event.
+* The showcase test compared PNG file bytes, which differ between Go
+  versions for identical pixels; it now compares pixels.
+
 ### JPEG determinism (2026-11-05)
 
 * Found on the Mac: with Go 1.25+ the standard library's JPEG decoder

@@ -20,9 +20,11 @@ darwin.Run(app)  // macOS window;  windows.Run(app) on Windows;  headless for te
   does not yet: [spec/STATUS.md](spec/STATUS.md). Internals:
   [spec/ARCHITECTURE.md](spec/ARCHITECTURE.md).
 * Example apps (public API only): [examples/](examples) — `hello`,
-  `counter`, and `demo` (a contacts manager with a list, a form and a
-  modal). `cd examples && go run ./demo -window` opens it on macOS or
-  Windows; `go run ./demo` writes PNGs of a scripted session.
+  `counter`, `demo` (a contacts manager with a list, a form and a
+  modal) and [`showcase`](examples/showcase) (a tour: multi-select order
+  form with live totals, calculator, six languages, layout gallery).
+  `cd examples && go run ./showcase -window` opens it on macOS or
+  Windows; without `-window` it writes PNGs of a scripted session.
 
 ## Install
 

@@ -35,6 +35,12 @@ machine (local Claude Code or a cloud session). Read it first, then
 | `testdata/multilingual` (Tamil, Hindi, mixed, Arabic, Hebrew, bidi, CJK, long paragraphs, inputs, IME) | done |
 | Final summary to the user (changed / unverified / weakest) | done (in the session; also spec/STATUS.md) |
 
+Memory (2026-11-05): font packs parse lazily; showcase start 99 → 85 MB
+on macOS. The ~22 MB of native memory is the CGImage frame copies plus
+the allocator's cache of freed ones; a buffer pool did not reduce the
+footprint (spec/STATUS.md, Memory). Next candidate: IOSurface-backed
+presentation (needs a by-eye check on a Mac). Showcase test compares pixels.
+
 JPEG determinism (2026-11-05): Go 1.25+ changed the stdlib JPEG decoder
 and broke `TestHashes`; fixed with `internal/jpeg` (copy of Go 1.24's
 decoder), passes with Go 1.24.0 and 1.27.1 on darwin/arm64.

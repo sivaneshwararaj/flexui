@@ -5,7 +5,20 @@ versioning with `v0.x` tags until the API settles.
 
 ## Unreleased
 
+### Added
+- `examples/showcase`: a tour of the framework (order form with
+  multi-select and live totals, calculator, languages, layout gallery)
+  with a scripted headless test and goldens.
+
+### Changed
+- Font pack faces are parsed lazily, the first time text falls back to
+  them, instead of at the first layout. The showcase's memory at start
+  went from 99 MB to 85 MB on macOS (the CJK pack is no longer parsed
+  until CJK text appears). Output is unchanged.
+
 ### Fixed
+- The showcase test compares pixels instead of PNG file bytes (Go's PNG
+  encoder output differs between Go versions).
 - JPEG pixels no longer depend on the Go version: images are decoded by
   `internal/jpeg`, a copy of Go 1.24's decoder (Go 1.25+ changed the
   standard library's IDCT, which broke `TestHashes` on newer toolchains).
