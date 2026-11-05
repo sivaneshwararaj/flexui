@@ -70,6 +70,7 @@ var (
 	pGlobalFree                    = kernel32.NewProc("GlobalFree")
 	pGlobalLock                    = kernel32.NewProc("GlobalLock")
 	pGlobalUnlock                  = kernel32.NewProc("GlobalUnlock")
+	pGlobalSize                    = kernel32.NewProc("GlobalSize")
 	pGetModuleHandleW              = kernel32.NewProc("GetModuleHandleW")
 )
 
@@ -85,7 +86,7 @@ func Load() error {
 		pTrackMouseEvent, pScreenToClient, pSetCapture, pReleaseCapture, pGetKeyState,
 		pOpenClipboard, pCloseClipboard, pEmptyClipboard, pGetClipboardData, pSetClipboardData,
 		pSetWindowTextW, pSetDIBitsToDevice, pGlobalAlloc, pGlobalFree, pGlobalLock,
-		pGlobalUnlock, pGetModuleHandleW,
+		pGlobalUnlock, pGlobalSize, pGetModuleHandleW,
 	} {
 		if err := p.Find(); err != nil {
 			return fmt.Errorf("windows: %w", err)

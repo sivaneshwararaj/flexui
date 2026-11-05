@@ -352,6 +352,9 @@ func wndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 	return r
 }
 
+// Clipboard returns the clipboard owned by this window.
+func (w *Window) Clipboard() Clipboard { return Clipboard{hwnd: w.hwnd} }
+
 // App is what Run needs (*flexui.App satisfies it).
 type App interface {
 	platform.AppHandler

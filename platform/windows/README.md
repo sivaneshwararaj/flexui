@@ -13,6 +13,7 @@ and compile-checked there for `windows/amd64` and `windows/arm64` with
 | 5 | Pass: hover, `Inc` clicks, list wheel scrolling with scrollbar, item selection (`picked item 3`, `5`). |
 | 6 | Pass (second run): typing, caret keys, selection, `RESULT: change` lines; Ctrl+C prints `clipboard write "...", error <nil>` and pastes into Notepad; Ctrl+V pastes text copied in Notepad. The first run's failed copy was not reproduced; the likely cause, another process briefly holding the clipboard (e.g. clipboard history), is now handled by retrying `OpenClipboard` for ~100 ms (unconfirmed). |
 | 7 | Pass: the counter app via `windows.Run`; +/- change the count, the red note appears after 3 clicks, the window closes normally. The full demo (`cd examples && go run ./demo -window`) also runs: list with scrollbar, selection, form. |
+| 8 | Not run yet (multilingual clipboard round trip). |
 
 Everything else (stages 3-7: flexui frames, resizing, DPI changes,
 input, text, clipboard, closing) is still untested.
@@ -64,6 +65,7 @@ no C compiler needed):
 | 5 | `go run ./platform/windows/stages/stage5` | Hover, clicks (`RESULT: Inc ...`), wheel and scrollbar-thumb scrolling, item selection, Tab focus, Enter/Space. |
 | 6 | `go run ./platform/windows/stages/stage6` | Typing, caret keys (Ctrl = word, Home/End = line), Shift selection, Ctrl+A/C/X/V with the Windows clipboard, an emoji typed with Win+. inserts as one character, `RESULT: change` when leaving a field. |
 | 7 | `go run ./platform/windows/stages/stage7` | `windows.Run(app)` with a complete app; closing returns normally. |
+| 8 | `go run ./platform/windows/stages/stage8` | Multilingual clipboard: 13 strings (Tamil, Hindi, Arabic, Hebrew, mixed, combining marks, emoji, joiners) written to and read back from the system clipboard, byte-identical (UTF-16 with surrogate pairs and a terminating NUL (`CF_UNICODETEXT`, read bounded by `GlobalSize`)); the Tamil sample left on the clipboard pastes intact into Notepad; text copied in another app and pasted into the field is printed as code points. Missing Tamil glyphs in the window are expected until the font work lands. |
 
 Each stage prints `EXPECT:` and `RESULT:` lines; add `-debug` to log every
 Win32 step, message and frame (with timings) to stderr, and include that

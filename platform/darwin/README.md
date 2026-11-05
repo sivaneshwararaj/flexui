@@ -14,6 +14,7 @@ silicon, macOS 27.2, build 26B123, Retina, scale 2):
 | 5 | Pass: clicks change the count, list items select, the list scrolls with the scrollbar shown, a focus border moves to the buttons. Hover highlighting was not visible in the screenshot (pointer elsewhere). |
 | 6 | Pass for typing: text appears in both fields, the caret moves, "Echo" mirrors the first field, and leaving it printed `RESULT: change name = "see"`; the window resized cleanly. Clipboard (Cmd+C/V across apps) and Option/Cmd caret moves were not explicitly reported. |
 | 7 | Pass: `darwin.Run(app)`; the count reached 80 with the note shown. |
+| 8 | Not run yet (multilingual clipboard round trip). |
 
 Everything not in a "Pass" line above (the system clipboard, Option/Cmd
 caret movement, moves between displays of different scale, amd64 Macs)
@@ -61,6 +62,7 @@ something fails.
 | 5 | `go run ./platform/darwin/stages/stage5` | Hover highlights, clicks (`RESULT: Inc ...`), wheel/trackpad and scrollbar-thumb scrolling, clicking list items, Tab focus and Enter/Space activation. |
 | 6 | `go run ./platform/darwin/stages/stage6` | Typing into inputs, caret and selection keys (Option = word, Command = line), Cmd+A/C/X/V with the system clipboard, `RESULT: change` when leaving a field. |
 | 7 | `go run ./platform/darwin/stages/stage7` | The public entry point `darwin.Run(app)` with a complete small app. |
+| 8 | `go run ./platform/darwin/stages/stage8` | Multilingual clipboard: 13 strings (Tamil, Hindi, Arabic, Hebrew, mixed, combining marks, emoji, joiners) written to and read back from the system clipboard, byte-identical (UTF-8 via `NSString` (`public.utf8-plain-text`)); the Tamil sample left on the clipboard pastes intact into TextEdit; text copied in another app and pasted into the field is printed as code points. Missing Tamil glyphs in the window are expected until the font work lands. |
 
 Runnable examples: `cd examples && go run ./counter -window`, and the demo
 app (list, form, modal): `cd examples && go run ./demo -window`. The demo's
