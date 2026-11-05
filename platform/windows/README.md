@@ -11,7 +11,7 @@ and compile-checked there for `windows/amd64` and `windows/arm64` with
 | 3 | Pass: `presented 420x260 @1.25x ... identical: true` (presented frame byte-identical to headless); card, bold and link runs sharp at 125%. |
 | 4 | Pass: boxes re-wrap on resize, size text updates; RESULT lines report e.g. `535x320 logical @1.25x = 669x400 pixels`. Moving to a monitor with another scale not reported. |
 | 5 | Pass: hover, `Inc` clicks, list wheel scrolling with scrollbar, item selection (`picked item 3`, `5`). |
-| 6 | Partial: typing, caret and `RESULT: change` lines work. **Ctrl+C did not copy.** Paste from other apps not reported. The stage now prints a `RESULT: clipboard write/read ...` line with the error for every copy and paste, and `OpenClipboard` is retried for ~100 ms; to be re-run. |
+| 6 | Pass (second run): typing, caret keys, selection, `RESULT: change` lines; Ctrl+C prints `clipboard write "...", error <nil>` and pastes into Notepad; Ctrl+V pastes text copied in Notepad. The first run's failed copy was not reproduced; the likely cause, another process briefly holding the clipboard (e.g. clipboard history), is now handled by retrying `OpenClipboard` for ~100 ms (unconfirmed). |
 | 7 | Not run yet. |
 
 Everything else (stages 3-7: flexui frames, resizing, DPI changes,
@@ -79,8 +79,8 @@ into `review/windows`).
 
 Stages 1-5 confirm the Win32 bindings, window creation, presentation,
 DPI sizing at 125%, resizing, pointer, wheel and keyboard input; stage 6
-confirms text input. Ctrl+C (clipboard write) failed in the first run and
-is being diagnosed. Still unverified, with the risks noted before running:
+confirms text input and the clipboard in both directions (after adding
+the `OpenClipboard` retry; the first run's failed copy was not reproduced). Still unverified, with the risks noted before running:
 
 * In particular:
   * The hand-written structure layouts (`WNDCLASSEXW`, `MSG`,
